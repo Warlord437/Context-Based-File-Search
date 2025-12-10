@@ -1,0 +1,12 @@
+{
+  "query": "resume",
+  "search_params": {
+    "search_limit": 5000,
+    "case_sensitive": false,
+    "exact": false,
+    "fast": true
+  },
+  "results": [],
+  "timestamp": 1759612312.789747,
+  "result_count": 0
+}

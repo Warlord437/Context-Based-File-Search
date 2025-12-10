@@ -1,0 +1,285 @@
+# Local-Agent Configuration File
+# Copy this file to config.yaml and customize as needed
+
+# Indexing Configuration
+index:
+  # Maximum tokens per chunk (affects search granularity)
+  max_tokens: 1200
+  
+  # Overlap between chunks (improves context)
+  overlap: 80
+  
+  # Embedding batch size (higher = faster, more memory)
+  batch_size: 1024
+  
+  # Database upsert batch size (higher = faster, more memory)
+  upsert_batch_size: 4000
+  
+  # Number of parser worker threads
+  num_parsers: 4
+  
+  # Default scan paths (relative to user home directory)
+  paths:
+    - "~/Documents"
+    - "~/Desktop"
+    - "~/Downloads"
+    - "~/Projects"
+    - "~/Code"
+    - "~/Work"
+    - "~/Repos"
+  
+  # File patterns to exclude from indexing
+  exclude_patterns:
+    # System directories
+    - "**/Library/**"
+    - "**/System/**"
+    - "**/Applications/**"
+    - "**/usr/**"
+    - "**/var/**"
+    - "**/proc/**"
+    - "**/sys/**"
+    - "**/dev/**"
+    - "**/run/**"
+    - "**/boot/**"
+    - "**/lost+found/**"
+    - "**/snap/**"
+    
+    # Development directories
+    - "**/node_modules/**"
+    - "**/.git/**"
+    - "**/__pycache__/**"
+    - "**/.venv/**"
+    - "**/venv/**"
+    - "**/.npm/**"
+    - "**/.yarn/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/target/**"
+    - "**/.gradle/**"
+    - "**/.m2/**"
+    
+    # Temporary and cache directories
+    - "**/tmp/**"
+    - "**/.cache/**"
+    - "**/.Trash/**"
+    - "**/.*/**"
+    - "**/.DS_Store"
+    - "**/Thumbs.db"
+    - "**/*.log"
+    - "**/*.tmp"
+    - "**/*.temp"
+    
+    # Large binary files
+    - "**/*.dmg"
+    - "**/*.pkg"
+    - "**/*.iso"
+    - "**/*.vmdk"
+    - "**/*.vdi"
+    - "**/*.zip"
+    - "**/*.tar.gz"
+    - "**/*.rar"
+    
+    # Media files (unless OCR enabled)
+    - "**/*.mp4"
+    - "**/*.avi"
+    - "**/*.mov"
+    - "**/*.mp3"
+    - "**/*.wav"
+    - "**/*.flac"
+
+# Search Configuration
+search:
+  # Default number of results to return
+  default_max_results: 50
+  
+  # Maximum number of vectors to scan (higher = more thorough)
+  default_search_limit: 5000
+  
+  # Enable keyword fallback for better matching
+  enable_keyword_fallback: true
+  
+  # Minimum word match percentage for keyword fallback
+  keyword_match_threshold: 0.7
+
+# Embedding Configuration
+embedding:
+  # Model to use for embeddings
+  model_name: "all-MiniLM-L6-v2"
+  
+  # Enable Apple Silicon MPS acceleration (if available)
+  use_mps: true
+  
+  # Normalize embeddings (recommended)
+  normalize_embeddings: true
+  
+  # Batch size for embedding generation
+  batch_size: 1024
+
+# Vector Database Configuration
+vectordb:
+  # Qdrant server URL (use local if not specified)
+  url: "http://localhost:6333"
+  
+  # Enable gRPC for better performance
+  prefer_grpc: true
+  
+  # Collection name
+  collection_name: "local_agent_vectors"
+  
+  # HNSW index parameters
+  hnsw_config:
+    m: 32                    # Number of bi-directional links
+    ef_construct: 256        # Size of dynamic candidate list
+  
+  # Optimizer configuration
+  optimizers_config:
+    default_segment_number: 4
+
+# LLM Configuration (for ask command)
+llm:
+  # Ollama model to use
+  model: "mistral"
+  
+  # Maximum number of retrieved chunks for context
+  max_context_chunks: 5
+  
+  # Temperature for response generation (0.0-1.0)
+  temperature: 0.7
+
+# Daemon Configuration
+daemon:
+  # Idle threshold in seconds before performing updates
+  idle_threshold: 300  # 5 minutes
+  
+  # CPU usage threshold (percentage)
+  cpu_threshold: 10
+  
+  # Memory usage threshold (percentage)
+  memory_threshold: 80
+  
+  # Check interval for system activity (seconds)
+  check_interval: 30
+  
+  # Maximum number of recent files to process per update
+  max_recent_files: 100
+
+# Logging Configuration
+logging:
+  # Log level (DEBUG, INFO, WARNING, ERROR)
+  level: "INFO"
+  
+  # Log file path (relative to storage directory)
+  log_file: "logs/local-agent.log"
+  
+  # Maximum log file size in MB
+  max_file_size: 10
+  
+  # Number of backup log files to keep
+  backup_count: 5
+  
+  # Log format (text or json)
+  format: "text"
+
+# Performance Configuration
+performance:
+  # Enable concurrent processing by default
+  enable_concurrent: true
+  
+  # Default number of parser workers
+  default_num_parsers: 4
+  
+  # Queue sizes for pipeline
+  files_queue_size: 500
+  chunks_queue_size: 500
+  vectors_queue_size: 50
+  
+  # Memory optimization
+  gc_threshold: 1000  # Run garbage collection every N operations
+
+# File Type Configuration
+file_types:
+  # Enable OCR for images (slow but comprehensive)
+  enable_ocr: false
+  
+  # Allowed file extensions (empty = allow all supported)
+  allowed_extensions:
+    - ".txt"
+    - ".md"
+    - ".markdown"
+    - ".pdf"
+    - ".docx"
+    - ".doc"
+    - ".html"
+    - ".htm"
+    - ".rtf"
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".java"
+    - ".cpp"
+    - ".c"
+    - ".h"
+    - ".xml"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+    - ".csv"
+    - ".tsv"
+  
+  # Image extensions (only processed if OCR enabled)
+  image_extensions:
+    - ".png"
+    - ".jpg"
+    - ".jpeg"
+    - ".gif"
+    - ".bmp"
+    - ".tiff"
+
+# Security Configuration
+security:
+  # Maximum file size to process (in MB)
+  max_file_size_mb: 100
+  
+  # Maximum number of files to process in one operation
+  max_files_per_operation: 10000
+  
+  # Enable path traversal protection
+  enable_path_protection: true
+  
+  # Allowed file paths (empty = allow all)
+  allowed_paths: []
+  
+  # Blocked file paths
+  blocked_paths:
+    - "/etc/**"
+    - "/sys/**"
+    - "/proc/**"
+    - "/dev/**"
+
+# Backup Configuration
+backup:
+  # Enable automatic backups
+  enable_backup: false
+  
+  # Backup interval in hours
+  backup_interval: 24
+  
+  # Number of backups to keep
+  backup_retention: 7
+  
+  # Backup directory
+  backup_directory: "backups/"
+
+# Monitoring Configuration
+monitoring:
+  # Enable performance monitoring
+  enable_monitoring: false
+  
+  # Metrics collection interval (seconds)
+  metrics_interval: 60
+  
+  # Enable Prometheus metrics export
+  enable_prometheus: false
+  
+  # Prometheus port
+  prometheus_port: 9090

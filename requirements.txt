@@ -1,0 +1,15 @@
+qdrant-client
+sentence-transformers
+ollama
+
+# Optional dependencies for extended file support
+PyPDF2>=3.0.0
+python-docx>=0.8.11
+Pillow>=9.0.0
+pytesseract>=0.3.10
+PyMuPDF>=1.23.0
+pypdfium2>=4.0.0
+pdfminer.six>=20220524
+beautifulsoup4>=4.11.0
+lxml>=4.9.0
+psutil>=5.9.0

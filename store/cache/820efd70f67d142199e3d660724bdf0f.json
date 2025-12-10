@@ -1,0 +1,12 @@
+{
+  "query": "federal",
+  "search_params": {
+    "search_limit": 5000,
+    "case_sensitive": false,
+    "exact": false,
+    "fast": false
+  },
+  "results": [],
+  "timestamp": 1759614343.368928,
+  "result_count": 0
+}

@@ -1,0 +1,82 @@
+# local-agent configuration
+# Modify these defaults as needed.
+
+index:
+  # default path(s) to index when running automated tasks or recursive index
+  paths:
+    - "~/Documents"
+    - "~/Desktop"
+    - "~/Downloads"
+    - "~/Pictures"
+  chunk_size: 500
+  max_tokens: 1200
+  overlap: 80
+  embed_batch: 1024
+  upsert_batch: 4000
+  max_items: 1000
+  allow_exts: [".txt", ".md", ".markdown", ".pdf", ".docx", ".html", ".htm", ".rtf"]
+  ocr_enabled: false
+  max_pdf_pages: 50
+  extraction_timeout: 10
+  # Exclude patterns for system-wide scans
+  exclude_patterns:
+    - "**/node_modules/**"
+    - "**/.git/**"
+    - "**/__pycache__/**"
+    - "**/.venv/**"
+    - "**/venv/**"
+    - "**/Library/**"
+    - "**/System/**"
+    - "**/Applications/**"
+    - "**/usr/**"
+    - "**/var/**"
+    - "**/tmp/**"
+    - "**/.cache/**"
+    - "**/.Trash/**"
+    - "**/.*/**"
+
+search:
+  top_k: 50
+  lex_k: 200
+  vec_k: 300
+  merge_k: 400
+  timeout_sec: 2.5
+  bm25_weight: 0.55
+  cosine_weight: 0.45
+  exact_boost: 0.20
+  early_pos_boost: 0.10
+  snippet_radius: 50
+
+qdrant:
+  url: "http://localhost:6333"
+  prefer_grpc: true
+  collection: "local_agent_vectors"
+  dim: 384
+  hnsw_config:
+    m: 32
+    ef_construct: 256
+  optimizers_config:
+    default_segment_number: 4
+
+paths:
+  store: "store"
+  catalog: "store/catalog.db"
+  frontier: "store/frontier.json"
+  cache: "store/cache"
+
+embedding:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  dim: 384
+
+vectordb:
+  use_qdrant: true
+  collection_name: "local_agent_vectors"
+  storage_path: "local-agent/store/vectors"
+
+llm:
+  use_ollama: true
+  model: "mistral"
+  timeout_seconds: 30
+
+logging:
+  runs_path: "local-agent/store/runs"
