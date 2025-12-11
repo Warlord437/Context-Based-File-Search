@@ -17,7 +17,7 @@ Thank you for your interest in contributing to Local-Agent! This document provid
 
 ## 📜 Code of Conduct
 
-This project adheres to a code of conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to [your-email@example.com].
+This project adheres to a code of conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to tathagatasaha152@gmail.com.
 
 ## 🚀 Getting Started
 
