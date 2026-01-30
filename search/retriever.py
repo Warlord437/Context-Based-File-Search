@@ -11,6 +11,7 @@ import numpy as np
 from .config import get_config
 from .storage import create_storage
 from .types import ScoredChunk, ScoreBreakdown, CandidateDict
+from .model_loader import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
@@ -25,24 +26,51 @@ class HybridRetriever:
         # Pre-compile patterns for efficiency
         self._punctuation_pattern = re.compile(r'[^\w\s]')
         self._whitespace_pattern = re.compile(r'\s+')
+        self._closed = False
+    
+    def close(self):
+        """Close all resources (database connections, etc.)."""
+        if self._closed:
+            return
+        
+        try:
+            if hasattr(self, 'catalog') and self.catalog:
+                self.catalog.close()
+            logger.debug("HybridRetriever resources closed")
+        except Exception as e:
+            logger.warning(f"Error closing HybridRetriever resources: {e}")
+        finally:
+            self._closed = True
+    
+    def __enter__(self):
+        """Context manager entry - allows 'with HybridRetriever(...)' usage."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - automatically closes resources."""
+        self.close()
+        return False  # Don't suppress exceptions
+    
+    def __del__(self):
+        """Cleanup on deletion - ensures resources are closed."""
+        if not self._closed:
+            try:
+                self.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
     
     def embed_query(self, text: str) -> Optional[np.ndarray]:
-        """Embed query text using SentenceTransformer."""
+        """Embed query text using SentenceTransformer (with cached model)."""
         try:
-            from sentence_transformers import SentenceTransformer
-            import torch
-            
-            # Load model (with MPS support if available)
-            device = 'mps' if torch.backends.mps.is_available() else 'cpu'
-            model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+            # Use cached model loader (loads once, reuses after)
+            model = get_embedding_model()
+            if model is None:
+                return None
             
             # Generate embedding
             embedding = model.encode([text], convert_to_tensor=False)
             return embedding[0]
             
-        except ImportError:
-            logger.error("sentence-transformers not available")
-            return None
         except Exception as e:
             logger.error(f"Query embedding failed: {e}")
             return None

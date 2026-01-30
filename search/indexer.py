@@ -14,6 +14,7 @@ from .config import get_config
 from .storage import create_storage
 from .types import Chunk, FrontierState, IndexStats
 from .ids import file_id, chunk_id, generate_file_sha256, get_file_stats
+from .model_loader import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,38 @@ class BFSIndexer:
         
         # Stats tracking
         self.stats = IndexStats()
+        self._closed = False
+    
+    def close(self):
+        """Close all resources (database connections, etc.)."""
+        if self._closed:
+            return
+        
+        try:
+            if hasattr(self, 'catalog') and self.catalog:
+                self.catalog.close()
+            logger.debug("BFSIndexer resources closed")
+        except Exception as e:
+            logger.warning(f"Error closing BFSIndexer resources: {e}")
+        finally:
+            self._closed = True
+    
+    def __enter__(self):
+        """Context manager entry - allows 'with BFSIndexer(...)' usage."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - automatically closes resources."""
+        self.close()
+        return False  # Don't suppress exceptions
+    
+    def __del__(self):
+        """Cleanup on deletion - ensures resources are closed."""
+        if not self._closed:
+            try:
+                self.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
     
     def run_bfs_slice(self, roots: List[str], max_items: int = None) -> IndexStats:
         """Run one BFS slice with checkpointing."""
@@ -143,21 +176,41 @@ class BFSIndexer:
         # Generate new SHA256
         new_sha256 = hashlib.sha256(text.encode()).hexdigest()
         
-        # Update file metadata
-        self.catalog.upsert_file(str(file_path), stats["size"], stats["mtime"], new_sha256)
-        
-        # Chunk text
+        # Chunk text (before database operations)
         chunks = self._chunk_text(text, file_path, fid)
         
-        # Insert chunks into catalog
-        self.catalog.insert_chunks(fid, chunks)
+        # All database operations in one transaction (all-or-nothing)
+        try:
+            with self.catalog.transaction():
+                # Step 1: Update file metadata
+                self.catalog.upsert_file(
+                    str(file_path), stats["size"], stats["mtime"], new_sha256,
+                    in_transaction=True
+                )
+                
+                # Step 2: Insert chunks into catalog
+                self.catalog.insert_chunks(fid, chunks, in_transaction=True)
+                
+                # Step 3: Insert into FTS (all chunks in same transaction)
+                for chunk in chunks:
+                    self.catalog.fts_insert(
+                        chunk.chunk_id, chunk.text, chunk.path,
+                        in_transaction=True
+                    )
+                # All database operations commit together here, or all rollback on error
+        except Exception as e:
+            logger.error(f"Database operations failed for {file_path}: {e}")
+            raise
         
-        # Generate embeddings and upsert to Qdrant
-        self._embed_and_upsert(chunks)
-        
-        # Insert into FTS
-        for chunk in chunks:
-            self.catalog.fts_insert(chunk.chunk_id, chunk.text, chunk.path)
+        # Step 4: Generate embeddings and upsert to Qdrant (external operation)
+        # If this fails, database is still consistent (file+chunks+FTS are saved)
+        # We can re-run embedding generation later if needed
+        try:
+            self._embed_and_upsert(chunks)
+        except Exception as e:
+            logger.warning(f"Embedding generation failed for {file_path}: {e}")
+            logger.warning("File metadata and chunks are saved, but embeddings are missing")
+            # Don't raise - database is consistent, just missing embeddings
         
         self.stats.chunks_created += len(chunks)
         logger.info(f"Processed file: {file_path} ({len(chunks)} chunks)")
@@ -233,10 +286,11 @@ class BFSIndexer:
         return self._extract_txt(file_path)  # Same as txt for now
     
     def _extract_pdf(self, file_path: str) -> Optional[str]:
-        """Extract text from PDF with robust pipeline."""
+        """Extract text from PDF with robust pipeline and proper resource cleanup."""
         text_parts = []
         
         # Try PyMuPDF first (fastest)
+        doc = None
         try:
             import fitz  # PyMuPDF
             doc = fitz.open(file_path)
@@ -247,8 +301,6 @@ class BFSIndexer:
                 if text.strip():
                     text_parts.append(text)
             
-            doc.close()
-            
             if text_parts:
                 return '\n\n'.join(text_parts)
                 
@@ -256,26 +308,43 @@ class BFSIndexer:
             logger.debug("PyMuPDF not available")
         except Exception as e:
             logger.debug(f"PyMuPDF extraction failed: {e}")
+        finally:
+            # Always close PDF document, even on error
+            if doc is not None:
+                try:
+                    doc.close()
+                except Exception:
+                    pass  # Ignore errors during cleanup
         
         # Try pypdfium2
+        pdf = None
         try:
             import pypdfium2 as pdfium
             
             pdf = pdfium.PdfDocument(file_path)
             
             for page_num in range(min(len(pdf), self.max_pdf_pages)):
-                page = pdf[page_num]
-                textpage = page.get_textpage()
-                
+                page = None
+                textpage = None
                 try:
+                    page = pdf[page_num]
+                    textpage = page.get_textpage()
+                    
                     text = textpage.get_text_bounded()
                     if text.strip():
                         text_parts.append(text)
                 finally:
-                    textpage.close()
-                    page.close()
-            
-            pdf.close()
+                    # Always close page resources
+                    if textpage is not None:
+                        try:
+                            textpage.close()
+                        except Exception:
+                            pass
+                    if page is not None:
+                        try:
+                            page.close()
+                        except Exception:
+                            pass
             
             if text_parts:
                 return '\n\n'.join(text_parts)
@@ -284,8 +353,15 @@ class BFSIndexer:
             logger.debug("pypdfium2 not available")
         except Exception as e:
             logger.debug(f"pypdfium2 extraction failed: {e}")
+        finally:
+            # Always close PDF document, even on error
+            if pdf is not None:
+                try:
+                    pdf.close()
+                except Exception:
+                    pass  # Ignore errors during cleanup
         
-        # Try pdfminer as fallback
+        # Try pdfminer as fallback (no resource management needed - handles internally)
         try:
             from pdfminer.high_level import extract_text
             text = extract_text(file_path, maxpages=self.max_pdf_pages)
@@ -390,14 +466,13 @@ class BFSIndexer:
         return chunks
     
     def _embed_and_upsert(self, chunks: List[Chunk]):
-        """Generate embeddings and upsert to Qdrant."""
+        """Generate embeddings and upsert to Qdrant (using cached model)."""
         try:
-            from sentence_transformers import SentenceTransformer
-            import torch
-            
-            # Load model (with MPS support if available)
-            device = 'mps' if torch.backends.mps.is_available() else 'cpu'
-            model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+            # Use cached model loader (loads once, reuses after)
+            model = get_embedding_model()
+            if model is None:
+                logger.error("Failed to load embedding model")
+                return
             
             # Prepare texts
             texts = [chunk.text for chunk in chunks]
@@ -428,8 +503,6 @@ class BFSIndexer:
             # Upsert to Qdrant
             self.qdrant.upsert_vectors(points)
             
-        except ImportError:
-            logger.error("sentence-transformers not available")
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
     
