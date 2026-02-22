@@ -42,20 +42,6 @@ The new hybrid search system with clean separation of concerns:
   - **QdrantStore**: Vector storage with HNSW optimization
   - **Catalog**: SQLite database with FTS5 for lexical search
   - **Features**: Batch operations, connection management, error handling
-- **v1.0.1 Improvements**:
-  - Auto-creates database schema on first run
-  - Transaction context manager for atomic operations
-  - Context manager support (`with` statement)
-  - Proper connection cleanup
-
-#### Model Loader (`search/model_loader.py`) - NEW in v1.0.1
-- **Purpose**: Thread-safe, cached model loading
-- **Features**:
-  - Singleton pattern for model instance
-  - Thread-safe with locks
-  - Automatic device detection (MPS/CUDA/CPU)
-  - Lazy loading on first use
-  - 246,000x faster subsequent access
 
 #### BFS Indexer (`search/indexer.py`)
 - **Purpose**: Level-by-level, checkpointable indexing
@@ -65,11 +51,6 @@ The new hybrid search system with clean separation of concerns:
   - Streaming extract → chunk → embed → upsert
   - Time and size caps for incremental processing
   - SHA256-based change detection
-- **v1.0.1 Improvements**:
-  - Uses cached model loader for faster embedding
-  - Atomic file processing with transaction management
-  - Proper PDF resource cleanup with try-finally
-  - Context manager support for cleanup
 
 #### Hybrid Retriever (`search/retriever.py`)
 - **Purpose**: Combines vector and lexical search
@@ -78,10 +59,6 @@ The new hybrid search system with clean separation of concerns:
   - **Lexical Search**: SQLite FTS5 with BM25 scoring
   - **Score Fusion**: Weighted combination with exact match boosts
   - **Deduplication**: File-level result aggregation
-- **v1.0.1 Improvements**:
-  - Uses cached model loader for instant embeddings
-  - Context manager support for proper cleanup
-  - `close()` method for explicit resource cleanup
 
 #### Public API (`search/api.py`)
 - **Purpose**: Clean interface for search operations

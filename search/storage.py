@@ -8,7 +8,6 @@ import hashlib
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-from contextlib import contextmanager
 import time
 
 from .types import Chunk, FileMeta, ScoredChunk
@@ -175,85 +174,19 @@ class Catalog:
         # Check if schema exists
         cursor = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='files'")
         if not cursor.fetchone():
-            logger.info("Database schema not found. Creating schema...")
-            self._create_schema()
+            logger.warning("Database schema not found. Run schema creation first.")
     
-    def _create_schema(self):
-        """Create database schema from schemas.sql file."""
-        try:
-            # Get the path to schemas.sql relative to this file
-            schema_path = Path(__file__).parent / "schemas.sql"
-            
-            if not schema_path.exists():
-                logger.error(f"Schema file not found at {schema_path}")
-                raise FileNotFoundError(f"Schema file not found: {schema_path}")
-            
-            # Read and execute schema
-            with open(schema_path, 'r', encoding='utf-8') as f:
-                schema_sql = f.read()
-            
-            # Execute the schema (executescript handles multiple statements)
-            with self.transaction():
-                self.conn.executescript(schema_sql)
-                # Auto-commits on success, auto-rollback on error
-            
-            logger.info("Database schema created successfully")
-            
-        except Exception as e:
-            logger.error(f"Failed to create database schema: {e}")
-            raise RuntimeError(f"Failed to initialize database schema: {e}") from e
-    
-    @contextmanager
-    def transaction(self):
-        """
-        Context manager for database transactions with automatic rollback on errors.
-        
-        Usage:
-            with catalog.transaction():
-                catalog.conn.execute("INSERT ...")
-                # Auto-commits on success, auto-rollback on error
-        """
-        try:
-            yield self.conn
-            self.conn.commit()
-            logger.debug("Transaction committed successfully")
-        except Exception as e:
-            self.conn.rollback()
-            logger.error(f"Transaction rolled back due to error: {e}")
-            raise
-    
-    def upsert_file(self, path: str, size: int, mtime: int, sha256: str, 
-                    in_transaction: bool = False) -> str:
-        """
-        Upsert file metadata and return file_id.
-        
-        Args:
-            path: File path
-            size: File size in bytes
-            mtime: Modification time
-            sha256: File hash
-            in_transaction: If True, don't commit (caller handles transaction)
-        
-        Returns:
-            file_id string
-        """
+    def upsert_file(self, path: str, size: int, mtime: int, sha256: str) -> str:
+        """Upsert file metadata and return file_id."""
         file_id = self._generate_file_id(path, mtime, size)
         
         try:
-            if in_transaction:
-                # Part of larger transaction, don't commit here
-                self.conn.execute("""
-                    INSERT OR REPLACE INTO files (file_id, path, size, mtime, sha256, indexed_at)
-                    VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-                """, (file_id, path, size, mtime, sha256))
-            else:
-                # Standalone operation, use transaction
-                with self.transaction():
-                    self.conn.execute("""
-                        INSERT OR REPLACE INTO files (file_id, path, size, mtime, sha256, indexed_at)
-                        VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-                    """, (file_id, path, size, mtime, sha256))
+            self.conn.execute("""
+                INSERT OR REPLACE INTO files (file_id, path, size, mtime, sha256, indexed_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+            """, (file_id, path, size, mtime, sha256))
             
+            self.conn.commit()
             return file_id
             
         except Exception as e:
@@ -263,9 +196,8 @@ class Catalog:
     def delete_file(self, file_id: str) -> bool:
         """Delete file and cascade to chunks."""
         try:
-            with self.transaction():
-                cursor = self.conn.execute("DELETE FROM files WHERE file_id = ?", (file_id,))
-                # Auto-commits on success, auto-rollback on error
+            cursor = self.conn.execute("DELETE FROM files WHERE file_id = ?", (file_id,))
+            self.conn.commit()
             
             deleted = cursor.rowcount > 0
             if deleted:
@@ -277,97 +209,44 @@ class Catalog:
             logger.error(f"Failed to delete file {file_id}: {e}")
             return False
     
-    def insert_chunks(self, file_id: str, chunks: List[Chunk], 
-                     in_transaction: bool = False) -> bool:
-        """
-        Insert chunk metadata into catalog.
-        
-        Args:
-            file_id: File ID
-            chunks: List of Chunk objects
-            in_transaction: If True, don't commit (caller handles transaction)
-        
-        Returns:
-            True if successful
-        """
+    def insert_chunks(self, file_id: str, chunks: List[Chunk]) -> bool:
+        """Insert chunk metadata into catalog."""
         try:
-            if in_transaction:
-                # Part of larger transaction, don't commit here
-                # Delete existing chunks for this file
-                self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
-                
-                # Insert new chunks
-                chunk_data = []
-                for chunk in chunks:
-                    chunk_data.append((
-                        chunk.chunk_id,
-                        file_id,
-                        chunk.idx,
-                        chunk.token_start,
-                        chunk.token_end
-                    ))
-                
-                self.conn.executemany("""
-                    INSERT INTO chunks (chunk_id, file_id, idx, token_start, token_end, created_at)
-                    VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-                """, chunk_data)
-            else:
-                # Standalone operation, use transaction
-                with self.transaction():
-                    # Delete existing chunks for this file
-                    self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
-                    
-                    # Insert new chunks
-                    chunk_data = []
-                    for chunk in chunks:
-                        chunk_data.append((
-                            chunk.chunk_id,
-                            file_id,
-                            chunk.idx,
-                            chunk.token_start,
-                            chunk.token_end
-                        ))
-                    
-                    self.conn.executemany("""
-                        INSERT INTO chunks (chunk_id, file_id, idx, token_start, token_end, created_at)
-                        VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-                    """, chunk_data)
+            # Delete existing chunks for this file
+            self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
             
+            # Insert new chunks
+            chunk_data = []
+            for chunk in chunks:
+                chunk_data.append((
+                    chunk.chunk_id,
+                    file_id,
+                    chunk.idx,
+                    chunk.token_start,
+                    chunk.token_end
+                ))
+            
+            self.conn.executemany("""
+                INSERT INTO chunks (chunk_id, file_id, idx, token_start, token_end, created_at)
+                VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+            """, chunk_data)
+            
+            self.conn.commit()
             return True
             
         except Exception as e:
             logger.error(f"Failed to insert chunks for file {file_id}: {e}")
             return False
     
-    def fts_insert(self, chunk_id: str, text: str, path: str, 
-                   in_transaction: bool = False) -> bool:
-        """
-        Insert text into FTS5 index.
-        
-        Args:
-            chunk_id: Chunk ID
-            text: Chunk text
-            path: File path
-            in_transaction: If True, don't commit (caller handles transaction)
-        
-        Returns:
-            True if successful
-        """
+    def fts_insert(self, chunk_id: str, text: str, path: str) -> bool:
+        """Insert text into FTS5 index."""
         try:
-            if in_transaction:
-                # Part of larger transaction, don't commit here
-                self.conn.execute("""
-                    INSERT OR REPLACE INTO chunks_fts (chunk_id, text, path)
-                    VALUES (?, ?, ?)
-                """, (chunk_id, text, path))
-            else:
-                # Standalone operation, use transaction
-                with self.transaction():
-                    self.conn.execute("""
-                        INSERT OR REPLACE INTO chunks_fts (chunk_id, text, path)
-                        VALUES (?, ?, ?)
-                    """, (chunk_id, text, path))
+            self.conn.execute("""
+                INSERT OR REPLACE INTO chunks_fts (chunk_id, text, path)
+                VALUES (?, ?, ?)
+            """, (chunk_id, text, path))
             
+            self.conn.commit()
             return True
             
         except Exception as e:
@@ -475,21 +354,8 @@ class Catalog:
     
     def close(self):
         """Close database connection."""
-        if hasattr(self, 'conn') and self.conn:
-            try:
-                self.conn.close()
-                logger.debug("Database connection closed")
-            except Exception as e:
-                logger.warning(f"Error closing database connection: {e}")
-    
-    def __enter__(self):
-        """Context manager entry - allows 'with Catalog(...)' usage."""
-        return self
-    
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager exit - automatically closes connection."""
-        self.close()
-        return False  # Don't suppress exceptions
+        if hasattr(self, 'conn'):
+            self.conn.close()
     
     def _generate_file_id(self, path: str, mtime: int, size: int) -> str:
         """Generate stable file ID."""

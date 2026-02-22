@@ -40,10 +40,9 @@ local-agent/
     ├── schemas.sql        # SQLite schema definitions
     ├── paths.py           # Store path constants
     ├── ids.py             # ID generation utilities
-    ├── storage.py         # Qdrant + SQLite storage layer (with transactions)
-    ├── indexer.py         # BFS streaming indexer (with resource cleanup)
-    ├── retriever.py       # Hybrid retrieval logic (with resource cleanup)
-    ├── model_loader.py    # Thread-safe cached model loading (NEW in v1.0.1)
+    ├── storage.py         # Qdrant + SQLite storage layer
+    ├── indexer.py         # BFS streaming indexer
+    ├── retriever.py       # Hybrid retrieval logic
     ├── snippets.py        # Text snippet generation
     ├── api.py             # Public API with caching
     └── bench.py           # Benchmarking suite

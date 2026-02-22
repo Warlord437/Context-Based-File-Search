@@ -174,10 +174,9 @@ search/
 ├── paths.py             # Store path constants
 ├── schemas.sql          # SQLite schema definitions
 ├── ids.py               # ID generation utilities
-├── storage.py           # Qdrant + SQLite storage layer (with transactions)
-├── indexer.py           # BFS streaming indexer (with resource cleanup)
-├── retriever.py         # Hybrid retrieval logic (with resource cleanup)
-├── model_loader.py      # Thread-safe cached model loading (NEW in v1.0.1)
+├── storage.py           # Qdrant + SQLite storage layer
+├── indexer.py           # BFS streaming indexer
+├── retriever.py         # Hybrid retrieval logic
 ├── snippets.py          # Text snippet generation
 ├── api.py               # Public API with caching
 └── bench.py             # Benchmarking suite
@@ -587,5 +586,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 *Transform your computer into a powerful, searchable knowledge base with hybrid AI search!*
 
-**Current Version**: 1.0.1 (Core Features + Critical Fixes)  
-**Next Release**: 2.0.0 (LLM Integration & Real-time Updates) - Q2 2026
+**Current Version**: 1.0.0 (Core Features Complete)  
+**Next Release**: 2.0.0 (LLM Integration & Real-time Updates) - Q2 2025
