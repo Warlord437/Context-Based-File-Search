@@ -11,8 +11,63 @@ import numpy as np
 from .config import get_config
 from .storage import create_storage
 from .types import ScoredChunk, ScoreBreakdown, CandidateDict
+from .model_loader import get_embedding_model
+from .validation import sanitize_fts_query, validate_search_params
 
 logger = logging.getLogger(__name__)
+
+# Query expansion: optional, uses WordNet synonyms when nltk available
+_query_expansion_enabled: Optional[bool] = None
+
+
+def _expand_query_with_synonyms(query: str, max_synonyms_per_word: int = 2) -> str:
+    """
+    Expand query with WordNet synonyms for better semantic recall.
+    Returns original query if WordNet unavailable.
+    """
+    global _query_expansion_enabled
+    if _query_expansion_enabled is False:
+        return query
+
+    try:
+        import nltk
+        from nltk.corpus import wordnet
+
+        # Lazy download of wordnet data
+        try:
+            wordnet.synsets("test")
+        except LookupError:
+            try:
+                nltk.download("wordnet", quiet=True)
+                nltk.download("omw-1.4", quiet=True)
+            except Exception:
+                _query_expansion_enabled = False
+                return query
+
+        _query_expansion_enabled = True
+        words = query.split()
+        expanded = set(words)
+
+        for word in words:
+            if len(word) < 3:
+                continue
+            for syn in wordnet.synsets(word)[:2]:
+                for lemma in syn.lemmas()[:max_synonyms_per_word]:
+                    synonym = lemma.name().replace("_", " ")
+                    if synonym.lower() != word.lower():
+                        expanded.add(synonym)
+
+        result = " ".join(expanded)
+        if result != query:
+            logger.debug(f"Query expanded: '{query}' -> '{result}'")
+        return result
+
+    except ImportError:
+        _query_expansion_enabled = False
+        return query
+    except Exception as e:
+        logger.debug(f"Query expansion skipped: {e}")
+        return query
 
 class HybridRetriever:
     """Hybrid retrieval combining vector and lexical search."""
@@ -25,24 +80,51 @@ class HybridRetriever:
         # Pre-compile patterns for efficiency
         self._punctuation_pattern = re.compile(r'[^\w\s]')
         self._whitespace_pattern = re.compile(r'\s+')
+        self._closed = False
+    
+    def close(self):
+        """Close all resources (database connections, etc.)."""
+        if self._closed:
+            return
+        
+        try:
+            if hasattr(self, 'catalog') and self.catalog:
+                self.catalog.close()
+            logger.debug("HybridRetriever resources closed")
+        except Exception as e:
+            logger.warning(f"Error closing HybridRetriever resources: {e}")
+        finally:
+            self._closed = True
+    
+    def __enter__(self):
+        """Context manager entry - allows 'with HybridRetriever(...)' usage."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - automatically closes resources."""
+        self.close()
+        return False  # Don't suppress exceptions
+    
+    def __del__(self):
+        """Cleanup on deletion - ensures resources are closed."""
+        if not self._closed:
+            try:
+                self.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
     
     def embed_query(self, text: str) -> Optional[np.ndarray]:
-        """Embed query text using SentenceTransformer."""
+        """Embed query text using SentenceTransformer (with cached model)."""
         try:
-            from sentence_transformers import SentenceTransformer
-            import torch
-            
-            # Load model (with MPS support if available)
-            device = 'mps' if torch.backends.mps.is_available() else 'cpu'
-            model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+            # Use cached model loader (loads once, reuses after)
+            model = get_embedding_model()
+            if model is None:
+                return None
             
             # Generate embedding
             embedding = model.encode([text], convert_to_tensor=False)
             return embedding[0]
             
-        except ImportError:
-            logger.error("sentence-transformers not available")
-            return None
         except Exception as e:
             logger.error(f"Query embedding failed: {e}")
             return None
@@ -78,8 +160,12 @@ class HybridRetriever:
         lex_k = lex_k or self.search_config["lex_k"]
         
         try:
-            # Clean and prepare query
-            clean_query = self._clean_query(query)
+            # Sanitize query to prevent FTS5 injection, then clean for search
+            safe_query = sanitize_fts_query(query)
+            clean_query = self._clean_query(safe_query) if safe_query else ""
+            
+            if not clean_query:
+                return {}
             
             # Search FTS5
             results = self.catalog.fts_search(clean_query, lex_k)
@@ -202,35 +288,89 @@ class HybridRetriever:
         
         return deduped
     
-    def search(self, query: str, k: int = None, timeout: float = 2.5) -> List[ScoredChunk]:
-        """Perform hybrid search and return top results."""
+    def search(
+        self,
+        query: str,
+        k: int = None,
+        timeout: float = 2.5,
+        filters: Optional[Dict[str, Any]] = None,
+        expand_query: bool = True,
+    ) -> List[ScoredChunk]:
+        """
+        Perform hybrid search and return top results.
+
+        Args:
+            query: Search query string
+            k: Max results to return
+            timeout: Vector search timeout
+            filters: Optional filters - file_ext (list), path_contains (str)
+            expand_query: If True, expand query with synonyms for vector search
+        """
+        # Validate search params
+        valid, err = validate_search_params(k=k)
+        if not valid and k is not None:
+            logger.warning(f"Invalid search param k={k}: {err}")
         k = k or self.search_config["top_k"]
-        
+        k = min(max(1, k), 1000)  # Clamp to safe range
+        filters = filters or {}
+
         start_time = time.time()
-        
+
+        # Use expanded query for vector search (better semantic recall)
+        embed_query_text = _expand_query_with_synonyms(query) if expand_query else query
+
         # Embed query
-        query_embedding = self.embed_query(query)
+        query_embedding = self.embed_query(embed_query_text)
         if query_embedding is None:
             logger.error("Failed to embed query")
             return []
-        
-        # Get candidates from both methods
+
+        # Get candidates: vector uses expanded query, lexical uses original (exact keywords)
         vec_candidates = self.vector_candidates(query_embedding, timeout=timeout)
         lex_candidates = self.lexical_candidates(query)
-        
+
         # Merge and score
         scored_chunks = self.merge_and_score(query, vec_candidates, lex_candidates)
-        
+
+        # Apply filters
+        scored_chunks = self._apply_filters(scored_chunks, filters)
+
         # Deduplicate by file
         deduped_chunks = self.dedupe_by_file(scored_chunks)
-        
+
         # Take top k results
         results = deduped_chunks[:k]
-        
+
         elapsed = time.time() - start_time
         logger.info(f"Hybrid search completed in {elapsed:.3f}s: {len(results)} results")
-        
+
         return results
+
+    def _apply_filters(
+        self, chunks: List[ScoredChunk], filters: Dict[str, Any]
+    ) -> List[ScoredChunk]:
+        """Apply search filters to scored chunks."""
+        if not filters:
+            return chunks
+
+        file_ext = filters.get("file_ext")
+        path_contains = filters.get("path_contains")
+
+        filtered = []
+        for chunk in chunks:
+            path_lower = chunk.path.lower()
+
+            if file_ext:
+                ext_ok = any(path_lower.endswith(e.lower()) for e in file_ext)
+                if not ext_ok:
+                    continue
+
+            if path_contains and path_contains.lower() not in path_lower:
+                continue
+
+            filtered.append(chunk)
+
+        return filtered
     
     def _clean_query(self, query: str) -> str:
         """Clean query for FTS5 search."""

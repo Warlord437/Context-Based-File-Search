@@ -89,7 +89,15 @@ def _find(args):
     """Search for content using hybrid retrieval."""
     try:
         from search.api import run
-        
+
+        # Build filters from CLI args
+        filters = {}
+        if getattr(args, 'file_type', None):
+            filters['file_ext'] = [f'.{ext.strip()}' if not ext.strip().startswith('.') else ext.strip()
+                                   for ext in args.file_type.split(',')]
+        if getattr(args, 'path_contains', None):
+            filters['path_contains'] = args.path_contains
+
         # Run search
         result = run(
             query=args.query,
@@ -99,7 +107,9 @@ def _find(args):
             opts={
                 'show_context': args.show_context,
                 'case_sensitive': args.case_sensitive,
-                'exact_match': args.exact
+                'exact_match': args.exact,
+                'filters': filters,
+                'expand_query': not getattr(args, 'no_expand', False),
             }
         )
         
@@ -112,7 +122,13 @@ def _find(args):
             return
         
         for i, hit in enumerate(result['items'], 1):
-            print(f"\n{i}. 📄 {hit.path}")
+            # Format browser links nicely (browser:bookmark:url or browser:history:url)
+            display_path = hit.path
+            if hit.path.startswith("browser:"):
+                parts = hit.path.split(":", 2)
+                if len(parts) >= 3:
+                    display_path = f"🔗 {parts[2]} ({parts[1]})"
+            print(f"\n{i}. 📄 {display_path}")
             print(f"   🎯 Score: {hit.score:.3f}")
             print(f"   📊 Breakdown: cos={hit.score_breakdown.cosine:.2f}, bm25={hit.score_breakdown.bm25:.2f}, exact={hit.score_breakdown.exact:.2f}")
             if args.show_context and hit.snippet:
@@ -189,6 +205,29 @@ def _status(args):
         print(f"❌ Error: {e}")
 
 
+def _index_browser(args):
+    """Index browser bookmarks and history."""
+    try:
+        from search.browser_indexer import run_browser_index
+        from search.config import get_config
+
+        config = get_config()
+        if not config.get("browser", {}).get("enabled", True):
+            print("Browser indexing is disabled in config.")
+            return
+
+        print("Indexing browser bookmarks and history...")
+        stats = run_browser_index(config)
+        print(f"\nBrowser indexing complete!")
+        print(f"Links indexed: {stats.chunks_created}")
+        print(f"Duration: {stats.duration_seconds:.2f}s")
+        if stats.errors:
+            print(f"Errors: {stats.errors}")
+    except Exception as e:
+        logger.error(f"Browser indexing failed: {e}")
+        print(f"Error: {e}")
+
+
 def _reset_db(args):
     """Clear all indexed data."""
     try:
@@ -260,6 +299,9 @@ def main():
     p_find.add_argument("--show-context", action="store_true", help="Show context snippets")
     p_find.add_argument("--case-sensitive", action="store_true", help="Case-sensitive search")
     p_find.add_argument("--exact", action="store_true", help="Exact match only")
+    p_find.add_argument("--file-type", type=str, help="Filter by file extension (e.g. pdf,docx or .pdf,.docx)")
+    p_find.add_argument("--path-contains", type=str, help="Filter: path must contain this string")
+    p_find.add_argument("--no-expand", action="store_true", help="Disable query expansion with synonyms")
     p_find.set_defaults(func=_find)
     
     # Ask command
@@ -271,6 +313,10 @@ def main():
     p_status = subparsers.add_parser("status", help="Check system status")
     p_status.set_defaults(func=_status)
     
+    # Index browser command
+    p_browser = subparsers.add_parser("index-browser", help="Index browser bookmarks and history")
+    p_browser.set_defaults(func=_index_browser)
+
     # Reset DB command
     p_reset = subparsers.add_parser("reset-db", help="Clear all indexed data")
     p_reset.set_defaults(func=_reset_db)

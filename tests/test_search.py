@@ -349,9 +349,9 @@ class TestAPI:
             
             api = SearchAPI(test_config)
             
-            # Mock retriever to return consistent results
+            # Mock retriever to return consistent results (accepts filters, expand_query)
             mock_results = []
-            m.setattr('search.retriever.HybridRetriever.search', lambda self, query, k, timeout: mock_results)
+            m.setattr('search.retriever.HybridRetriever.search', lambda self, query, k=None, timeout=2.5, filters=None, expand_query=True: mock_results)
             
             query = "test query"
             cache_key = api._generate_cache_key(query, 10, 1, 10, {})
@@ -384,7 +384,7 @@ class TestAPI:
                 })() for i in range(5)
             ]
             
-            m.setattr('search.retriever.HybridRetriever.search', lambda self, query, k, timeout: mock_results)
+            m.setattr('search.retriever.HybridRetriever.search', lambda self, query, k=None, timeout=2.5, filters=None, expand_query=True: mock_results)
             m.setattr('search.retriever.HybridRetriever.dedupe_by_file', lambda self, chunks, max_results_per_file: chunks)
             
             # Test first page

@@ -2,6 +2,8 @@
 # Modify these defaults as needed.
 
 index:
+  # Sentence-aware chunking (respects . ! ? boundaries)
+  sentence_chunking: true
   # default path(s) to index when running automated tasks or recursive index
   paths:
     - "~/Documents"
@@ -46,6 +48,9 @@ search:
   exact_boost: 0.20
   early_pos_boost: 0.10
   snippet_radius: 50
+  # Hide low-relevance results (browser links use stricter threshold)
+  min_score_threshold: 0.08
+  min_score_browser: 0.12
 
 qdrant:
   url: "http://localhost:6333"
@@ -75,8 +80,15 @@ vectordb:
 
 llm:
   use_ollama: true
-  model: "mistral"
+  model: "llama3.2:3b"
   timeout_seconds: 30
 
 logging:
   runs_path: "local-agent/store/runs"
+
+# Browser indexing (bookmarks + history)
+browser:
+  enabled: true
+  enabled_browsers: ["chrome", "firefox"]
+  max_bookmarks: 10000
+  max_history: 5000

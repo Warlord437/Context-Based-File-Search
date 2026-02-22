@@ -108,7 +108,7 @@ $ python3 local-agent/cli.py bfs-index ~/Documents
 $ python3 local-agent/cli.py bfs-index ~/Documents
 2026-01-26 14:00:00 - INFO - Database schema not found. Creating schema...
 2026-01-26 14:00:00 - INFO - Database schema created successfully
-2026-01-26 14:00:01 - INFO - Processing file: /Users/me/Documents/test.pdf
+2026-01-26 14:00:01 - INFO - Processing file: ~/Documents/test.pdf
 ✅ Works perfectly!
 ```
 

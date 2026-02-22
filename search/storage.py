@@ -8,6 +8,7 @@ import hashlib
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
+from contextlib import contextmanager
 import time
 
 from .types import Chunk, FileMeta, ScoredChunk
@@ -121,28 +122,28 @@ class QdrantStore:
             return False
     
     def vector_search(self, embedding: List[float], limit: int, timeout: float = 2.5) -> List[Dict[str, Any]]:
-        """Search vectors in Qdrant with timeout."""
+        """Search vectors in Qdrant with timeout. Uses query_points API (qdrant-client 1.7+)."""
         if not self.client:
             raise RuntimeError("Qdrant client not available")
         
         try:
             start_time = time.time()
             
-            # Perform search with timeout consideration
-            results = self.client.search(
+            # Use query_points (replaces deprecated search() in qdrant-client 1.7+)
+            response = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=embedding,
+                query=embedding,
                 limit=limit,
-                timeout=int(timeout)
+                timeout=int(timeout) if timeout else None
             )
             
-            # Convert to our format
+            # Convert to our format (response.points = list of ScoredPoint)
             hits = []
-            for result in results:
+            for point in (response.points or []):
                 hits.append({
-                    "chunk_id": result.id,
-                    "score": result.score,
-                    "payload": result.payload
+                    "chunk_id": point.id,
+                    "score": point.score,
+                    "payload": point.payload or {}
                 })
             
             elapsed = time.time() - start_time
@@ -153,6 +154,42 @@ class QdrantStore:
         except Exception as e:
             logger.error(f"Vector search failed: {e}")
             return []
+
+    def delete_points_by_path_prefix(self, path_prefix: str) -> int:
+        """
+        Delete points whose payload path starts with prefix (e.g. 'browser:').
+        Returns number of points deleted.
+        """
+        if not self.client or not path_prefix:
+            return 0
+        try:
+            ids = []
+            offset = None
+            while True:
+                result, offset = self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=None,
+                    limit=2000,
+                    offset=offset,
+                    with_payload=["path"],
+                    with_vectors=False,
+                )
+                for rec in result:
+                    path_val = (rec.payload or {}).get("path", "")
+                    if isinstance(path_val, str) and path_val.startswith(path_prefix):
+                        ids.append(rec.id)
+                if offset is None or not result:
+                    break
+            if ids:
+                self.client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=ids,
+                )
+                logger.info(f"Deleted {len(ids)} Qdrant points with path prefix '{path_prefix}'")
+            return len(ids)
+        except Exception as e:
+            logger.warning(f"Qdrant delete by prefix failed: {e}")
+            return 0
 
 
 class Catalog:
@@ -174,19 +211,86 @@ class Catalog:
         # Check if schema exists
         cursor = self.conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='files'")
         if not cursor.fetchone():
-            logger.warning("Database schema not found. Run schema creation first.")
+            logger.info("Database schema not found. Creating schema...")
+            self._create_schema()
     
-    def upsert_file(self, path: str, size: int, mtime: int, sha256: str) -> str:
-        """Upsert file metadata and return file_id."""
-        file_id = self._generate_file_id(path, mtime, size)
+    def _create_schema(self):
+        """Create database schema from schemas.sql file."""
+        try:
+            # Get the path to schemas.sql relative to this file
+            schema_path = Path(__file__).parent / "schemas.sql"
+            
+            if not schema_path.exists():
+                logger.error(f"Schema file not found at {schema_path}")
+                raise FileNotFoundError(f"Schema file not found: {schema_path}")
+            
+            # Read and execute schema
+            with open(schema_path, 'r', encoding='utf-8') as f:
+                schema_sql = f.read()
+            
+            # Execute the schema (executescript handles multiple statements)
+            with self.transaction():
+                self.conn.executescript(schema_sql)
+                # Auto-commits on success, auto-rollback on error
+            
+            logger.info("Database schema created successfully")
+            
+        except Exception as e:
+            logger.error(f"Failed to create database schema: {e}")
+            raise RuntimeError(f"Failed to initialize database schema: {e}") from e
+    
+    @contextmanager
+    def transaction(self):
+        """
+        Context manager for database transactions with automatic rollback on errors.
+        
+        Usage:
+            with catalog.transaction():
+                catalog.conn.execute("INSERT ...")
+                # Auto-commits on success, auto-rollback on error
+        """
+        try:
+            yield self.conn
+            self.conn.commit()
+            logger.debug("Transaction committed successfully")
+        except Exception as e:
+            self.conn.rollback()
+            logger.error(f"Transaction rolled back due to error: {e}")
+            raise
+    
+    def upsert_file(self, path: str, size: int, mtime: int, sha256: str, 
+                    in_transaction: bool = False, file_id: str = None) -> str:
+        """
+        Upsert file metadata and return file_id.
+        
+        Args:
+            path: File path
+            size: File size in bytes
+            mtime: Modification time
+            sha256: File hash
+            in_transaction: If True, don't commit (caller handles transaction)
+            file_id: Optional explicit file_id (e.g. for browser entries)
+        
+        Returns:
+            file_id string
+        """
+        file_id = file_id or self._generate_file_id(path, mtime, size)
         
         try:
-            self.conn.execute("""
-                INSERT OR REPLACE INTO files (file_id, path, size, mtime, sha256, indexed_at)
-                VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-            """, (file_id, path, size, mtime, sha256))
+            if in_transaction:
+                # Part of larger transaction, don't commit here
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO files (file_id, path, size, mtime, sha256, indexed_at)
+                    VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+                """, (file_id, path, size, mtime, sha256))
+            else:
+                # Standalone operation, use transaction
+                with self.transaction():
+                    self.conn.execute("""
+                        INSERT OR REPLACE INTO files (file_id, path, size, mtime, sha256, indexed_at)
+                        VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+                    """, (file_id, path, size, mtime, sha256))
             
-            self.conn.commit()
             return file_id
             
         except Exception as e:
@@ -196,8 +300,9 @@ class Catalog:
     def delete_file(self, file_id: str) -> bool:
         """Delete file and cascade to chunks."""
         try:
-            cursor = self.conn.execute("DELETE FROM files WHERE file_id = ?", (file_id,))
-            self.conn.commit()
+            with self.transaction():
+                cursor = self.conn.execute("DELETE FROM files WHERE file_id = ?", (file_id,))
+                # Auto-commits on success, auto-rollback on error
             
             deleted = cursor.rowcount > 0
             if deleted:
@@ -209,44 +314,97 @@ class Catalog:
             logger.error(f"Failed to delete file {file_id}: {e}")
             return False
     
-    def insert_chunks(self, file_id: str, chunks: List[Chunk]) -> bool:
-        """Insert chunk metadata into catalog."""
+    def insert_chunks(self, file_id: str, chunks: List[Chunk], 
+                     in_transaction: bool = False) -> bool:
+        """
+        Insert chunk metadata into catalog.
+        
+        Args:
+            file_id: File ID
+            chunks: List of Chunk objects
+            in_transaction: If True, don't commit (caller handles transaction)
+        
+        Returns:
+            True if successful
+        """
         try:
-            # Delete existing chunks for this file
-            self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
+            if in_transaction:
+                # Part of larger transaction, don't commit here
+                # Delete existing chunks for this file
+                self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
+                
+                # Insert new chunks
+                chunk_data = []
+                for chunk in chunks:
+                    chunk_data.append((
+                        chunk.chunk_id,
+                        file_id,
+                        chunk.idx,
+                        chunk.token_start,
+                        chunk.token_end
+                    ))
+                
+                self.conn.executemany("""
+                    INSERT INTO chunks (chunk_id, file_id, idx, token_start, token_end, created_at)
+                    VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+                """, chunk_data)
+            else:
+                # Standalone operation, use transaction
+                with self.transaction():
+                    # Delete existing chunks for this file
+                    self.conn.execute("DELETE FROM chunks WHERE file_id = ?", (file_id,))
+                    
+                    # Insert new chunks
+                    chunk_data = []
+                    for chunk in chunks:
+                        chunk_data.append((
+                            chunk.chunk_id,
+                            file_id,
+                            chunk.idx,
+                            chunk.token_start,
+                            chunk.token_end
+                        ))
+                    
+                    self.conn.executemany("""
+                        INSERT INTO chunks (chunk_id, file_id, idx, token_start, token_end, created_at)
+                        VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
+                    """, chunk_data)
             
-            # Insert new chunks
-            chunk_data = []
-            for chunk in chunks:
-                chunk_data.append((
-                    chunk.chunk_id,
-                    file_id,
-                    chunk.idx,
-                    chunk.token_start,
-                    chunk.token_end
-                ))
-            
-            self.conn.executemany("""
-                INSERT INTO chunks (chunk_id, file_id, idx, token_start, token_end, created_at)
-                VALUES (?, ?, ?, ?, ?, strftime('%s', 'now'))
-            """, chunk_data)
-            
-            self.conn.commit()
             return True
             
         except Exception as e:
             logger.error(f"Failed to insert chunks for file {file_id}: {e}")
             return False
     
-    def fts_insert(self, chunk_id: str, text: str, path: str) -> bool:
-        """Insert text into FTS5 index."""
+    def fts_insert(self, chunk_id: str, text: str, path: str, 
+                   in_transaction: bool = False) -> bool:
+        """
+        Insert text into FTS5 index.
+        
+        Args:
+            chunk_id: Chunk ID
+            text: Chunk text
+            path: File path
+            in_transaction: If True, don't commit (caller handles transaction)
+        
+        Returns:
+            True if successful
+        """
         try:
-            self.conn.execute("""
-                INSERT OR REPLACE INTO chunks_fts (chunk_id, text, path)
-                VALUES (?, ?, ?)
-            """, (chunk_id, text, path))
+            if in_transaction:
+                # Part of larger transaction, don't commit here
+                self.conn.execute("""
+                    INSERT OR REPLACE INTO chunks_fts (chunk_id, text, path)
+                    VALUES (?, ?, ?)
+                """, (chunk_id, text, path))
+            else:
+                # Standalone operation, use transaction
+                with self.transaction():
+                    self.conn.execute("""
+                        INSERT OR REPLACE INTO chunks_fts (chunk_id, text, path)
+                        VALUES (?, ?, ?)
+                    """, (chunk_id, text, path))
             
-            self.conn.commit()
             return True
             
         except Exception as e:
@@ -256,6 +414,13 @@ class Catalog:
     def fts_search(self, query: str, k: int = 200) -> List[Tuple[str, float]]:
         """Search FTS5 index and return (chunk_id, bm25_score) tuples."""
         try:
+            # Sanitize query (defense-in-depth if called directly)
+            from .validation import sanitize_fts_query
+            query = sanitize_fts_query(query)
+            if not query:
+                return []
+            k = max(1, min(int(k) if isinstance(k, (int, float)) else 200, 1000))
+
             # Use FTS5 match syntax with BM25 ranking
             cursor = self.conn.execute("""
                 SELECT chunk_id, bm25(chunks_fts) as score
@@ -278,6 +443,31 @@ class Catalog:
             logger.error(f"FTS search failed for query '{query}': {e}")
             return []
     
+    def get_sample_texts_for_paths(self, paths: List[str], max_chars: int = 600) -> str:
+        """Get combined sample text from chunks_fts for given paths (for AI categorization)."""
+        if not paths:
+            return ""
+        try:
+            limited_paths = paths[:20]
+            placeholders = ",".join("?" * len(limited_paths))
+            cursor = self.conn.execute(f"""
+                SELECT text FROM chunks_fts
+                WHERE path IN ({placeholders})
+                LIMIT 5
+            """, limited_paths)
+            texts = []
+            total = 0
+            for row in cursor:
+                t = (row["text"] or "").strip()
+                if t and total < max_chars:
+                    snippet = t[:max_chars - total] if len(t) + total > max_chars else t
+                    texts.append(snippet)
+                    total += len(snippet)
+            return "\n---\n".join(texts) if texts else ""
+        except Exception as e:
+            logger.debug(f"get_sample_texts_for_paths failed: {e}")
+            return ""
+
     def get_chunk_text(self, chunk_id: str) -> Optional[str]:
         """Get chunk text from FTS5 index."""
         try:
@@ -332,6 +522,89 @@ class Catalog:
             logger.error(f"Failed to get chunk metadata for {chunk_id}: {e}")
             return None
     
+    def list_files_for_visualization(self, limit: int = 500) -> List[Dict[str, Any]]:
+        """
+        List files with path and metadata for visualization.
+        Returns path, file_id, derived category, file_type, and source (local|browser).
+        Uses balanced sampling so both local files and browser links are included.
+        """
+        try:
+            # Balanced sampling: get ~half from local, ~half from browser (if both exist)
+            half = max(limit // 2, 50)
+            local_rows = []
+            browser_rows = []
+            cursor = self.conn.execute("""
+                SELECT f.file_id, f.path, f.size,
+                       (SELECT COUNT(*) FROM chunks c WHERE c.file_id = f.file_id) as chunk_count
+                FROM files f
+                WHERE f.path NOT LIKE 'browser:%'
+                ORDER BY f.indexed_at DESC
+                LIMIT ?
+            """, (half,))
+            local_rows = [dict(r) for r in cursor.fetchall()]
+            cursor = self.conn.execute("""
+                SELECT f.file_id, f.path, f.size,
+                       (SELECT COUNT(*) FROM chunks c WHERE c.file_id = f.file_id) as chunk_count
+                FROM files f
+                WHERE f.path LIKE 'browser:%'
+                ORDER BY f.indexed_at DESC
+                LIMIT ?
+            """, (half,))
+            browser_rows = [dict(r) for r in cursor.fetchall()]
+            # Interleave: local first, then browser, up to limit
+            rows = (local_rows + browser_rows)[:limit]
+            result = []
+            for row in rows:
+                path = row["path"]
+                category, file_type = self._derive_category_and_type(path)
+                source = "browser" if path.lower().startswith("browser:") else "local"
+                result.append({
+                    "file_id": row["file_id"],
+                    "path": path,
+                    "size": row["size"],
+                    "chunk_count": row["chunk_count"],
+                    "category": category,
+                    "file_type": file_type,
+                    "source": source,
+                })
+            return result
+        except Exception as e:
+            logger.error(f"Failed to list files for visualization: {e}")
+            return []
+
+    def _derive_category_and_type(self, path: str) -> Tuple[str, str]:
+        """Derive category (folder/source) and file type from path."""
+        path_lower = path.lower()
+        if path_lower.startswith("browser:"):
+            parts = path.split(":", 3)
+            source = parts[1] if len(parts) > 1 else "browser"
+            return f"browser/{source}", "url"
+        ext = Path(path).suffix.lower() if "." in path else ""
+        if not ext and ("http" in path_lower or "www." in path_lower):
+            return "web", "url"
+        # Local file: use parent path as category (e.g. Documents/Projects)
+        try:
+            p = Path(path).expanduser()
+            parts = p.parts
+            if len(parts) >= 2:
+                # Skip root, use first 2 dirs e.g. Users/name/Documents/Projects -> Documents/Projects
+                home_parts = Path.home().parts
+                if len(parts) > len(home_parts) and parts[: len(home_parts)] == home_parts:
+                    category = "/".join(parts[len(home_parts) : -1]) or "root"
+                else:
+                    category = "/".join(parts[-2:-1]) if len(parts) > 1 else "root"
+            else:
+                category = "root"
+        except Exception:
+            category = "other"
+        type_map = {
+            ".pdf": "pdf", ".md": "markdown", ".markdown": "markdown",
+            ".txt": "text", ".docx": "docx", ".html": "html", ".htm": "html",
+            ".rtf": "rtf",
+        }
+        file_type = type_map.get(ext, ext.lstrip(".") or "file")
+        return category, file_type
+
     def get_file_stats(self) -> Dict[str, int]:
         """Get database statistics."""
         try:
@@ -354,8 +627,21 @@ class Catalog:
     
     def close(self):
         """Close database connection."""
-        if hasattr(self, 'conn'):
-            self.conn.close()
+        if hasattr(self, 'conn') and self.conn:
+            try:
+                self.conn.close()
+                logger.debug("Database connection closed")
+            except Exception as e:
+                logger.warning(f"Error closing database connection: {e}")
+    
+    def __enter__(self):
+        """Context manager entry - allows 'with Catalog(...)' usage."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - automatically closes connection."""
+        self.close()
+        return False  # Don't suppress exceptions
     
     def _generate_file_id(self, path: str, mtime: int, size: int) -> str:
         """Generate stable file ID."""

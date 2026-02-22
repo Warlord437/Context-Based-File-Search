@@ -1,2 +1,4 @@
 timestamp,operation,files_indexed,chunks_indexed,t_index,t_search_hybrid,t_search_vec,t_search_lex,test_paths,queries
 1759617356,indexing,5,5,7.1603240966796875,0.7564971446990967,0,0,/var/folders/c5/n_j_r23j6gxcv5g5sf3g4njm0000gn/T/search_bench_rtjtcfqj,
+1771636788,indexing,0,0,0.5214738845825195,0.9674135208129883,0,0,.,
+1771637241,indexing,0,0,0.5151910781860352,5.0197509765625,0,0,.,

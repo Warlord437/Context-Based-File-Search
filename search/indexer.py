@@ -14,6 +14,7 @@ from .config import get_config
 from .storage import create_storage
 from .types import Chunk, FrontierState, IndexStats
 from .ids import file_id, chunk_id, generate_file_sha256, get_file_stats
+from .model_loader import get_embedding_model
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,38 @@ class BFSIndexer:
         
         # Stats tracking
         self.stats = IndexStats()
+        self._closed = False
+    
+    def close(self):
+        """Close all resources (database connections, etc.)."""
+        if self._closed:
+            return
+        
+        try:
+            if hasattr(self, 'catalog') and self.catalog:
+                self.catalog.close()
+            logger.debug("BFSIndexer resources closed")
+        except Exception as e:
+            logger.warning(f"Error closing BFSIndexer resources: {e}")
+        finally:
+            self._closed = True
+    
+    def __enter__(self):
+        """Context manager entry - allows 'with BFSIndexer(...)' usage."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - automatically closes resources."""
+        self.close()
+        return False  # Don't suppress exceptions
+    
+    def __del__(self):
+        """Cleanup on deletion - ensures resources are closed."""
+        if not self._closed:
+            try:
+                self.close()
+            except Exception:
+                pass  # Ignore errors during cleanup
     
     def run_bfs_slice(self, roots: List[str], max_items: int = None) -> IndexStats:
         """Run one BFS slice with checkpointing."""
@@ -143,21 +176,41 @@ class BFSIndexer:
         # Generate new SHA256
         new_sha256 = hashlib.sha256(text.encode()).hexdigest()
         
-        # Update file metadata
-        self.catalog.upsert_file(str(file_path), stats["size"], stats["mtime"], new_sha256)
-        
-        # Chunk text
+        # Chunk text (before database operations)
         chunks = self._chunk_text(text, file_path, fid)
         
-        # Insert chunks into catalog
-        self.catalog.insert_chunks(fid, chunks)
+        # All database operations in one transaction (all-or-nothing)
+        try:
+            with self.catalog.transaction():
+                # Step 1: Update file metadata
+                self.catalog.upsert_file(
+                    str(file_path), stats["size"], stats["mtime"], new_sha256,
+                    in_transaction=True
+                )
+                
+                # Step 2: Insert chunks into catalog
+                self.catalog.insert_chunks(fid, chunks, in_transaction=True)
+                
+                # Step 3: Insert into FTS (all chunks in same transaction)
+                for chunk in chunks:
+                    self.catalog.fts_insert(
+                        chunk.chunk_id, chunk.text, chunk.path,
+                        in_transaction=True
+                    )
+                # All database operations commit together here, or all rollback on error
+        except Exception as e:
+            logger.error(f"Database operations failed for {file_path}: {e}")
+            raise
         
-        # Generate embeddings and upsert to Qdrant
-        self._embed_and_upsert(chunks)
-        
-        # Insert into FTS
-        for chunk in chunks:
-            self.catalog.fts_insert(chunk.chunk_id, chunk.text, chunk.path)
+        # Step 4: Generate embeddings and upsert to Qdrant (external operation)
+        # If this fails, database is still consistent (file+chunks+FTS are saved)
+        # We can re-run embedding generation later if needed
+        try:
+            self._embed_and_upsert(chunks)
+        except Exception as e:
+            logger.warning(f"Embedding generation failed for {file_path}: {e}")
+            logger.warning("File metadata and chunks are saved, but embeddings are missing")
+            # Don't raise - database is consistent, just missing embeddings
         
         self.stats.chunks_created += len(chunks)
         logger.info(f"Processed file: {file_path} ({len(chunks)} chunks)")
@@ -233,10 +286,11 @@ class BFSIndexer:
         return self._extract_txt(file_path)  # Same as txt for now
     
     def _extract_pdf(self, file_path: str) -> Optional[str]:
-        """Extract text from PDF with robust pipeline."""
+        """Extract text from PDF with robust pipeline and proper resource cleanup."""
         text_parts = []
         
         # Try PyMuPDF first (fastest)
+        doc = None
         try:
             import fitz  # PyMuPDF
             doc = fitz.open(file_path)
@@ -247,8 +301,6 @@ class BFSIndexer:
                 if text.strip():
                     text_parts.append(text)
             
-            doc.close()
-            
             if text_parts:
                 return '\n\n'.join(text_parts)
                 
@@ -256,26 +308,43 @@ class BFSIndexer:
             logger.debug("PyMuPDF not available")
         except Exception as e:
             logger.debug(f"PyMuPDF extraction failed: {e}")
+        finally:
+            # Always close PDF document, even on error
+            if doc is not None:
+                try:
+                    doc.close()
+                except Exception:
+                    pass  # Ignore errors during cleanup
         
         # Try pypdfium2
+        pdf = None
         try:
             import pypdfium2 as pdfium
             
             pdf = pdfium.PdfDocument(file_path)
             
             for page_num in range(min(len(pdf), self.max_pdf_pages)):
-                page = pdf[page_num]
-                textpage = page.get_textpage()
-                
+                page = None
+                textpage = None
                 try:
+                    page = pdf[page_num]
+                    textpage = page.get_textpage()
+                    
                     text = textpage.get_text_bounded()
                     if text.strip():
                         text_parts.append(text)
                 finally:
-                    textpage.close()
-                    page.close()
-            
-            pdf.close()
+                    # Always close page resources
+                    if textpage is not None:
+                        try:
+                            textpage.close()
+                        except Exception:
+                            pass
+                    if page is not None:
+                        try:
+                            page.close()
+                        except Exception:
+                            pass
             
             if text_parts:
                 return '\n\n'.join(text_parts)
@@ -284,8 +353,15 @@ class BFSIndexer:
             logger.debug("pypdfium2 not available")
         except Exception as e:
             logger.debug(f"pypdfium2 extraction failed: {e}")
+        finally:
+            # Always close PDF document, even on error
+            if pdf is not None:
+                try:
+                    pdf.close()
+                except Exception:
+                    pass  # Ignore errors during cleanup
         
-        # Try pdfminer as fallback
+        # Try pdfminer as fallback (no resource management needed - handles internally)
         try:
             from pdfminer.high_level import extract_text
             text = extract_text(file_path, maxpages=self.max_pdf_pages)
@@ -349,55 +425,116 @@ class BFSIndexer:
             return None
     
     def _chunk_text(self, text: str, file_path, file_id: str) -> List[Chunk]:
-        """Chunk text into overlapping segments."""
+        """
+        Chunk text into overlapping segments with sentence-aware boundaries.
+        
+        Uses sentence boundaries (. ! ?) when possible to avoid mid-sentence splits,
+        falling back to word-based chunking for text without clear sentence structure.
+        """
         max_tokens = self.config["index"]["max_tokens"]
         overlap = self.config["index"]["overlap"]
+        use_sentences = self.config["index"].get("sentence_chunking", True)
         
-        # Simple tokenization (approximate)
+        # Try sentence-aware chunking first (better for prose, docs)
+        if use_sentences:
+            chunks = self._chunk_by_sentences(text, file_path, file_id, max_tokens, overlap)
+            if chunks:
+                return chunks
+        
+        # Fallback: word-based chunking (for code, lists, etc.)
+        return self._chunk_by_words(text, file_path, file_id, max_tokens, overlap)
+    
+    def _chunk_by_sentences(self, text: str, file_path, file_id: str, 
+                           max_tokens: int, overlap: int) -> List[Chunk]:
+        """Chunk text respecting sentence boundaries."""
+        import re
+        # Split on sentence boundaries: . ! ? followed by whitespace or end
+        sentence_pattern = re.compile(r'(?<=[.!?])\s+|\n\s*\n')
+        sentences = [s.strip() for s in sentence_pattern.split(text) if s.strip()]
+        
+        if not sentences:
+            return []
+        
+        chunks = []
+        current_chunk_sentences = []
+        current_length = 0
+        overlap_sentences = max(1, overlap // 50)  # Overlap ~50 words per sentence
+        chunk_idx = 0
+        
+        for sentence in sentences:
+            sentence_words = len(sentence.split())
+            
+            if current_length + sentence_words > max_tokens and current_chunk_sentences:
+                # Save current chunk
+                chunk_text = ' '.join(current_chunk_sentences)
+                chunk = self._create_chunk(chunk_text, file_path, file_id, chunk_idx)
+                chunks.append(chunk)
+                chunk_idx += 1
+                
+                # Keep last N sentences for overlap
+                overlap_count = min(overlap_sentences, len(current_chunk_sentences))
+                current_chunk_sentences = current_chunk_sentences[-overlap_count:]
+                current_length = sum(len(s.split()) for s in current_chunk_sentences)
+            
+            current_chunk_sentences.append(sentence)
+            current_length += sentence_words
+        
+        if current_chunk_sentences:
+            chunk_text = ' '.join(current_chunk_sentences)
+            chunk = self._create_chunk(chunk_text, file_path, file_id, chunk_idx)
+            chunks.append(chunk)
+        
+        return chunks
+    
+    def _chunk_by_words(self, text: str, file_path, file_id: str,
+                        max_tokens: int, overlap: int) -> List[Chunk]:
+        """Fallback: chunk by word count (original behavior)."""
         words = text.split()
         chunks = []
-        
         i = 0
         chunk_idx = 0
         
         while i < len(words):
-            # Take chunk of words
             chunk_words = words[i:i + max_tokens]
             chunk_text = ' '.join(chunk_words)
             
             if not chunk_text.strip():
                 break
             
-            # Create chunk
-            chunk = Chunk(
-                path=str(file_path),
-                file_id=file_id,
-                chunk_id=chunk_id(file_id, chunk_idx),
-                text=chunk_text,
-                token_start=i,
-                token_end=i + len(chunk_words),
-                mtime=int(Path(file_path).stat().st_mtime),
-                sha256=hashlib.sha256(chunk_text.encode()).hexdigest(),
-                idx=chunk_idx
-            )
-            
+            chunk = self._create_chunk(chunk_text, file_path, file_id, chunk_idx,
+                                       token_start=i, token_end=i + len(chunk_words))
             chunks.append(chunk)
             chunk_idx += 1
-            
-            # Move forward with overlap
             i += max_tokens - overlap
         
         return chunks
     
+    def _create_chunk(self, chunk_text: str, file_path, file_id: str, chunk_idx: int,
+                      token_start: int = 0, token_end: int = None) -> Chunk:
+        """Create a Chunk object with metadata."""
+        if token_end is None:
+            token_end = token_start + len(chunk_text.split())
+        
+        return Chunk(
+            path=str(file_path),
+            file_id=file_id,
+            chunk_id=chunk_id(file_id, chunk_idx),
+            text=chunk_text,
+            token_start=token_start,
+            token_end=token_end,
+            mtime=int(Path(file_path).stat().st_mtime),
+            sha256=hashlib.sha256(chunk_text.encode()).hexdigest(),
+            idx=chunk_idx
+        )
+    
     def _embed_and_upsert(self, chunks: List[Chunk]):
-        """Generate embeddings and upsert to Qdrant."""
+        """Generate embeddings and upsert to Qdrant (using cached model)."""
         try:
-            from sentence_transformers import SentenceTransformer
-            import torch
-            
-            # Load model (with MPS support if available)
-            device = 'mps' if torch.backends.mps.is_available() else 'cpu'
-            model = SentenceTransformer('all-MiniLM-L6-v2', device=device)
+            # Use cached model loader (loads once, reuses after)
+            model = get_embedding_model()
+            if model is None:
+                logger.error("Failed to load embedding model")
+                return
             
             # Prepare texts
             texts = [chunk.text for chunk in chunks]
@@ -411,9 +548,11 @@ class BFSIndexer:
                 batch_embeddings = model.encode(batch_texts, convert_to_tensor=False)
                 embeddings.extend(batch_embeddings.tolist())
             
-            # Prepare points for Qdrant
+            # Prepare points for Qdrant (payload includes text for dashboard visualization)
             points = []
             for chunk, embedding in zip(chunks, embeddings):
+                # Truncate text for payload (Qdrant dashboard display, ~500 chars)
+                text_snippet = (chunk.text[:500] + "...") if len(chunk.text) > 500 else chunk.text
                 points.append({
                     "id": chunk.chunk_id,
                     "vector": embedding,
@@ -421,15 +560,14 @@ class BFSIndexer:
                         "path": chunk.path,
                         "file_id": chunk.file_id,
                         "chunk_id": chunk.chunk_id,
-                        "idx": chunk.idx
+                        "idx": chunk.idx,
+                        "text": text_snippet
                     }
                 })
             
             # Upsert to Qdrant
             self.qdrant.upsert_vectors(points)
             
-        except ImportError:
-            logger.error("sentence-transformers not available")
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
     
@@ -497,8 +635,30 @@ class BFSIndexer:
 
 def run_bfs_slice(roots: List[str], **kwargs) -> IndexStats:
     """Run one BFS slice with given parameters."""
+    from .validation import sanitize_file_path, validate_chunk_params
+
+    # Validate roots
+    valid_roots = []
+    for r in roots:
+        resolved, err = sanitize_file_path(r, must_exist=True)
+        if err:
+            logger.warning(f"Skipping invalid root {r}: {err}")
+            continue
+        valid_roots.append(str(resolved))
+    if not valid_roots:
+        raise ValueError("No valid index roots provided")
+
     config = get_config()
-    
+
+    # Validate chunk params from config
+    max_tokens = config["index"].get("max_tokens", 1200)
+    overlap = config["index"].get("overlap", 80)
+    valid, err = validate_chunk_params(max_tokens, overlap)
+    if not valid:
+        logger.warning(f"Chunk params: {err}, using defaults")
+        config["index"]["max_tokens"] = min(max(1200, max_tokens), 10000)
+        config["index"]["overlap"] = min(max(0, overlap), max_tokens - 1)
+
     # Override config with kwargs
     for key, value in kwargs.items():
         if key in config:
@@ -507,9 +667,9 @@ def run_bfs_slice(roots: List[str], **kwargs) -> IndexStats:
             config["index"][key] = value
     
     indexer = BFSIndexer(config)
-    
+
     start_time = time.time()
-    stats = indexer.run_bfs_slice(roots, kwargs.get("max_items", 1000))
+    stats = indexer.run_bfs_slice(valid_roots, kwargs.get("max_items", 1000))
     stats.duration_seconds = time.time() - start_time
     
     logger.info(f"BFS slice completed: {stats.files_processed} files, {stats.chunks_created} chunks, {stats.duration_seconds:.2f}s")
@@ -519,32 +679,45 @@ def run_bfs_slice(roots: List[str], **kwargs) -> IndexStats:
 
 def run_complete_index(roots: List[str], **kwargs) -> IndexStats:
     """Run complete indexing of all files in roots."""
+    from .validation import sanitize_file_path
+
+    # Validate roots
+    valid_roots = []
+    for r in roots:
+        resolved, err = sanitize_file_path(r, must_exist=True)
+        if err:
+            logger.warning(f"Skipping invalid root {r}: {err}")
+            continue
+        valid_roots.append(str(resolved))
+    if not valid_roots:
+        raise ValueError("No valid index roots provided")
+
     config = get_config()
-    
+
     # Override config with kwargs
     for key, value in kwargs.items():
         if key in config:
             config[key] = value
         elif key in config.get("index", {}):
             config["index"][key] = value
-    
+
     indexer = BFSIndexer(config)
-    
+
     start_time = time.time()
-    
+
     # Run BFS slices until all files are processed
     total_stats = IndexStats()
     max_items_per_slice = kwargs.get("max_items_per_slice", 1000)
-    
+
     # Clear frontier to start fresh
     frontier_path = Path(config["paths"]["frontier"])
     if frontier_path.exists():
         frontier_path.unlink()
         logger.info("Cleared existing frontier for fresh start")
-    
+
     while True:
         # Run one slice
-        slice_stats = indexer.run_bfs_slice(roots, max_items_per_slice)
+        slice_stats = indexer.run_bfs_slice(valid_roots, max_items_per_slice)
         
         # Accumulate stats
         total_stats.files_processed += slice_stats.files_processed
@@ -576,8 +749,9 @@ def run_complete_index(roots: List[str], **kwargs) -> IndexStats:
 if __name__ == "__main__":
     # Test the indexer
     import sys
-    
-    roots = [sys.argv[1]] if len(sys.argv) > 1 else ["/Users/tathagatasaha/Desktop/localagentandcliwithvectordb"]
+
+    default_root = str(Path.home() / "Documents")
+    roots = [sys.argv[1]] if len(sys.argv) > 1 else [default_root]
     
     print(f"Testing BFS indexer with roots: {roots}")
     

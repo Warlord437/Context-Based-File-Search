@@ -28,6 +28,20 @@ A production-ready, AI-powered document search engine with hybrid retrieval (vec
 - **Performance Metrics**: Detailed timing and improvement tracking
 - **Extensible**: Plugin architecture for custom file types and parsers
 
+## 📸 Preview
+
+### Search Results (Web UI)
+
+Search returns local files and web links with relevance scores, content snippets, and quick actions. Local files include an **Open** button to open in your default app.
+
+![Search results showing local PDF files with match scores and Open buttons](assets/search-results-local-files.png)
+
+### 3D File Visualization
+
+Explore your indexed content as an interactive 3D force-directed graph. Blue nodes represent local files, green nodes represent web links. Left-click to rotate, right-click to pan.
+
+![3D force-directed graph of indexed files and links](assets/visualization-3d-graph.png)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -43,11 +57,18 @@ A production-ready, AI-powered document search engine with hybrid retrieval (vec
 git clone https://github.com/yourusername/local-agent.git
 cd local-agent
 
+# Create virtual environment (recommended)
+python3 -m venv .venv
+source .venv/bin/activate   # On Windows: .venv\Scripts\activate
+
 # Install dependencies
 pip install -r requirements.txt
 
 # Start Qdrant server
 docker-compose up -d
+
+# Visualize vectors in Qdrant dashboard (optional)
+# Open http://localhost:6333/dashboard → see [VISUALIZATION.md](VISUALIZATION.md) for file clusters & visualization
 
 # Index your documents using the new BFS indexer
 python3 local-agent/cli.py bfs-index ~/Documents
@@ -72,6 +93,21 @@ python3 local-agent/cli.py find "your search query" --show-context
 python3 local-agent/cli.py reset-db
 ```
 
+### Web UI (Optional)
+
+```bash
+# Start the web interface
+uvicorn web.server:app --reload --port 8000
+
+# Open http://localhost:8000 in your browser
+```
+
+See [web/README.md](web/README.md) for details.
+
+### View File Clusters & Vector Visualization
+
+Open **http://localhost:6333/dashboard** to explore your indexed documents in Qdrant. See [VISUALIZATION.md](VISUALIZATION.md) for how to view file clusters, browse payloads, and interpret the vector space.
+
 ## 📖 Usage Examples
 
 ### ✅ Currently Working Commands
@@ -90,9 +126,14 @@ python3 local-agent/cli.py find "TODO" --case-sensitive --exact
 # Check system status
 python3 local-agent/cli.py status
 
+# Index browser bookmarks and history
+python3 local-agent/cli.py index-browser
+
 # Reset database and start fresh
 python3 local-agent/cli.py reset-db
 ```
+
+See [BROWSER_INDEXING.md](BROWSER_INDEXING.md) for browser indexing details.
 
 ### 🚧 Coming Soon (Not Yet Implemented)
 
@@ -174,9 +215,10 @@ search/
 ├── paths.py             # Store path constants
 ├── schemas.sql          # SQLite schema definitions
 ├── ids.py               # ID generation utilities
-├── storage.py           # Qdrant + SQLite storage layer
-├── indexer.py           # BFS streaming indexer
-├── retriever.py         # Hybrid retrieval logic
+├── storage.py           # Qdrant + SQLite storage layer (with transactions)
+├── indexer.py           # BFS streaming indexer (with resource cleanup)
+├── retriever.py         # Hybrid retrieval logic (with resource cleanup)
+├── model_loader.py      # Thread-safe cached model loading (NEW in v1.0.1)
 ├── snippets.py          # Text snippet generation
 ├── api.py               # Public API with caching
 └── bench.py             # Benchmarking suite
@@ -586,5 +628,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 *Transform your computer into a powerful, searchable knowledge base with hybrid AI search!*
 
-**Current Version**: 1.0.0 (Core Features Complete)  
-**Next Release**: 2.0.0 (LLM Integration & Real-time Updates) - Q2 2025
+**Current Version**: 1.0.1 (Core Features + Critical Fixes)  
+**Next Release**: 2.0.0 (LLM Integration & Real-time Updates) - Q2 2026

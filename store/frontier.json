@@ -1,7 +1,304 @@
 {
   "queue": [],
-  "seen": {},
-  "processed_files": 0,
-  "processed_dirs": 0,
+  "seen": {
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main": [
+      16777232,
+      31229643
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes": [
+      16777232,
+      31275557
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/config.yaml.example": [
+      16777232,
+      31229655
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/PROJECT_STATUS.md": [
+      16777232,
+      31229652
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/ARCHITECTURE.md": [
+      16777232,
+      31229645
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/requirements.txt": [
+      16777232,
+      31229662
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/CHANGELOG.md": [
+      16777232,
+      31229646
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Dockerfile": [
+      16777232,
+      31229650
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web": [
+      16777232,
+      33718151
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/install.sh": [
+      16777232,
+      31229657
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/tests": [
+      16777232,
+      31229698
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/config.yaml": [
+      16777232,
+      31229654
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/CHATGPT_GUIDE.md": [
+      16777232,
+      31229647
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/INSTALL.md": [
+      16777232,
+      31229651
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search": [
+      16777232,
+      31229663
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/README.md": [
+      16777232,
+      31229653
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/FIXES.md": [
+      16777232,
+      31276317
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/setup.py": [
+      16777232,
+      31229686
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/requirements-dev.txt": [
+      16777232,
+      31229661
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/DOCUMENTATION_UPDATE_SUMMARY.md": [
+      16777232,
+      31229649
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/CONTRIBUTING.md": [
+      16777232,
+      31229648
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/examples": [
+      16777232,
+      31251968
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/local-agent": [
+      16777232,
+      31229659
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/docker-compose.yml": [
+      16777232,
+      31229656
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/local-agent.sh": [
+      16777232,
+      31229658
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/CONTENT_SEARCH_ENHANCEMENTS.md": [
+      16777232,
+      33716610
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store": [
+      16777232,
+      31229687
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIX_TRANSACTION_MANAGEMENT_ISSUE.md": [
+      16777232,
+      31275947
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIX_DATABASE_SCHEMA_ISSUE.md": [
+      16777232,
+      31273235
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIX_RESOURCE_LEAKS_ISSUE.md": [
+      16777232,
+      31279004
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIX_MODEL_LOADING_ISSUE.md": [
+      16777232,
+      31275489
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIXES.md": [
+      16777232,
+      31275094
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIX_INPUT_VALIDATION_ISSUE.md": [
+      16777232,
+      33765257
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIX_RESOURCE_LEAKS_SUMMARY.md": [
+      16777232,
+      31279311
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/Fixes/FIXES_VERIFICATION_REPORT.md": [
+      16777232,
+      31283445
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/server.py": [
+      16777232,
+      33718152
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/__pycache__": [
+      16777232,
+      33719894
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/README.md": [
+      16777232,
+      33719411
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/static": [
+      16777232,
+      33718160
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/tests/test_search.py": [
+      16777232,
+      31229700
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/tests/Improvements": [
+      16777232,
+      33717779
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/tests/__init__.py": [
+      16777232,
+      31229699
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/tests/__pycache__": [
+      16777232,
+      31234465
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/config.py": [
+      16777232,
+      31229677
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/schemas.sql": [
+      16777232,
+      31229682
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/paths.py": [
+      16777232,
+      31229680
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/retriever.py": [
+      16777232,
+      31229681
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/__init__.py": [
+      16777232,
+      31229664
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/types.py": [
+      16777232,
+      31229685
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/__pycache__": [
+      16777232,
+      31229665
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/bench.py": [
+      16777232,
+      31229676
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/api.py": [
+      16777232,
+      31229675
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/indexer.py": [
+      16777232,
+      31229679
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/storage.py": [
+      16777232,
+      31229684
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/snippets.py": [
+      16777232,
+      31229683
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/model_loader.py": [
+      16777232,
+      31275143
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/ids.py": [
+      16777232,
+      31229678
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/search/validation.py": [
+      16777232,
+      33764266
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/local-agent/cli.py": [
+      16777232,
+      31229660
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/cache": [
+      16777232,
+      31229689
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/frontier.json": [
+      16777232,
+      35285053
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/catalog.db": [
+      16777232,
+      31229694
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/runs": [
+      16777232,
+      31229696
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/static/index.html": [
+      16777232,
+      33718161
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/static/css": [
+      16777232,
+      33718228
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/static/js": [
+      16777232,
+      33718292
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/tests/Improvements/CODE_REVIEW_AND_IMPROVEMENT_PLAN.md": [
+      16777232,
+      31271743
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/cache/cf50bf9e1eabe817583f203f35fcc8a5.json": [
+      16777232,
+      31229693
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/cache/6d395e9efda4a306bb2b3c998beaff7b.json": [
+      16777232,
+      31229691
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/cache/1c9e2cd07fed0cf7ac636965cf1344d0.json": [
+      16777232,
+      31229690
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/cache/820efd70f67d142199e3d660724bdf0f.json": [
+      16777232,
+      31229692
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/store/runs/search_bench.csv": [
+      16777232,
+      31229697
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/static/css/style.css": [
+      16777232,
+      33718229
+    ],
+    "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/static/js/app.js": [
+      16777232,
+      33718293
+    ]
+  },
+  "processed_files": 57,
+  "processed_dirs": 17,
   "errors": []
 }

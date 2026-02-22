@@ -57,6 +57,10 @@ class SearchAPI:
             include_snippets=opts.get("include_snippets", True),
             snippet_radius=opts.get("snippet_radius", self.search_config["snippet_radius"])
         )
+
+        # Extract filters
+        filters = opts.get("filters") or {}
+        expand_query = opts.get("expand_query", self.search_config.get("expand_query", True))
         
         # Check cache
         cache_key = self._generate_cache_key(query, k, page, per_page, opts)
@@ -72,7 +76,9 @@ class SearchAPI:
             scored_chunks = self.retriever.search(
                 query=query,
                 k=k,
-                timeout=self.search_config["timeout_sec"]
+                timeout=self.search_config["timeout_sec"],
+                filters=filters,
+                expand_query=expand_query,
             )
             
             # Apply search options
@@ -83,11 +89,17 @@ class SearchAPI:
                 )
             
             # Generate search hits with snippets
+            min_score = self.search_config.get("min_score_threshold", 0)
+            min_score_browser = self.search_config.get("min_score_browser", min_score)
+
             search_hits = []
             for chunk in scored_chunks:
+                threshold = min_score_browser if (chunk.path or "").startswith("browser:") else min_score
+                if chunk.score < threshold:
+                    continue
                 hit = self._create_search_hit(chunk, query, search_opts)
                 search_hits.append(hit)
-            
+
             # Apply pagination
             total_hits = len(search_hits)
             start_idx = (page - 1) * per_page
@@ -160,7 +172,9 @@ class SearchAPI:
         # Determine file type
         file_type = "unknown"
         if chunk.path:
-            if chunk.path.endswith(('.md', '.markdown')):
+            if chunk.path.startswith("browser:"):
+                file_type = "link"
+            elif chunk.path.endswith(('.md', '.markdown')):
                 file_type = "markdown"
             elif chunk.path.endswith('.pdf'):
                 file_type = "pdf"

@@ -256,6 +256,47 @@ Resources (PDF documents, database connections, file handles) were not always cl
 
 ---
 
+## Fix #5: Input Validation ✅
+
+**Issue**: Missing input validation - path traversal risk, FTS5 query injection, unvalidated config  
+**Severity**: HIGH  
+**Status**: ✅ FIXED  
+**Date**: January 26, 2026
+
+### Problem
+
+- No validation of file paths (invalid paths, null bytes)
+- No sanitization of FTS5 query strings (OR/AND/NOT injection)
+- No validation of chunk sizes or config values
+
+### Solution Implemented
+
+1. ✅ **Created `search/validation.py`** - Sanitization and validation functions
+2. ✅ **FTS5 query sanitization** - Extract safe tokens, filter operators, limit length to 500 chars
+3. ✅ **Path validation** - Resolve, check length (4096 max), reject null bytes
+4. ✅ **Chunk param validation** - max_tokens 10-10000, overlap validated
+5. ✅ **Integrated** - Retriever, storage, indexer, config, web API
+
+### Files Modified
+
+- `search/validation.py` - **NEW**
+- `search/retriever.py` - sanitize_fts_query, validate_search_params
+- `search/storage.py` - sanitize in fts_search (defense-in-depth)
+- `search/indexer.py` - validate roots and chunk params
+- `search/config.py` - validate chunk params in validate_config
+- `web/server.py` - validate index path before indexing
+
+### Impact
+
+- ✅ FTS5 query injection prevented
+- ✅ Invalid paths rejected with clear errors
+- ✅ Config and chunk params validated
+- ✅ Defense-in-depth at multiple layers
+
+See [FIX_INPUT_VALIDATION_ISSUE.md](FIX_INPUT_VALIDATION_ISSUE.md) for full details.
+
+---
+
 **Last Updated**: January 26, 2026  
-**Total Fixes Applied**: 4  
+**Total Fixes Applied**: 5  
 **Fixes In Progress**: 0

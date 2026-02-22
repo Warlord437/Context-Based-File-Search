@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local-Agent | Hybrid Document Search</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🔍</span>
+        <h1>Local-Agent</h1>
+        <span class="tagline">Hybrid Document Search</span>
+      </div>
+      <div class="status-badge" id="statusBadge">
+        <span class="status-dot"></span>
+        <span class="status-text">Checking...</span>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="search-section">
+        <div class="search-box">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Search your documents... (semantic + keyword)"
+            autocomplete="off"
+            autofocus
+          >
+          <button type="button" id="searchBtn" class="btn-primary">Search</button>
+        </div>
+
+        <div class="index-section">
+          <details class="index-details">
+            <summary>Index</summary>
+            <div class="index-form">
+              <input type="text" id="indexPath" placeholder="e.g. ~/Documents" value="">
+              <input type="number" id="maxItems" value="100" min="10" max="5000" title="Max files per run">
+              <button type="button" id="indexBtn" class="btn-secondary">Index folder</button>
+              <button type="button" id="indexBrowserBtn" class="btn-secondary" title="Index bookmarks & history from Chrome, Firefox">Index browser</button>
+            </div>
+            <p class="index-hint" id="indexHint"></p>
+          </details>
+        </div>
+
+        <div class="filters">
+          <div class="filter-group">
+            <label for="fileType">File type</label>
+            <input type="text" id="fileType" placeholder="e.g. pdf, docx (optional)">
+          </div>
+          <div class="filter-group">
+            <label for="pathContains">Path contains</label>
+            <input type="text" id="pathContains" placeholder="e.g. Documents (optional)">
+          </div>
+          <label class="checkbox-label">
+            <input type="checkbox" id="expandQuery" checked>
+            Query expansion (synonyms)
+          </label>
+        </div>
+      </section>
+
+      <section class="stats-bar" id="statsBar">
+        <span id="statsText"></span>
+      </section>
+
+      <section class="viz-section" id="vizSection">
+        <div class="viz-header">
+          <h2>File Visualization</h2>
+          <div class="viz-legend">
+            <span class="legend-dot" style="background:#3fb950" title="Local files"></span> local
+            <span class="legend-dot" style="background:#58a6ff" title="Browser links"></span> links
+          </div>
+          <div class="viz-tabs">
+            <button type="button" class="viz-tab active" data-view="3d">3D Graph</button>
+            <button type="button" class="viz-tab" data-view="categories" title="AI-categorized by content">Categories</button>
+          </div>
+        </div>
+        <div class="viz-container" id="vizContainer">
+          <div id="graph3d" class="graph-3d"></div>
+          <div id="categoriesView" class="categories-view" style="display: none;"></div>
+        </div>
+        <p class="viz-hint" id="vizHint">Loading...</p>
+      </section>
+
+      <section class="results-section">
+        <div class="results" id="results">
+          <div class="empty-state" id="emptyState">
+            <p>Enter a search query to find documents across your indexed files.</p>
+            <p class="hint">Uses AI embeddings + BM25 keyword search for best results.</p>
+          </div>
+          <div class="results-list" id="resultsList" style="display: none;"></div>
+        </div>
+
+        <nav class="pagination" id="pagination" style="display: none;">
+          <button type="button" id="prevBtn" disabled>← Previous</button>
+          <span id="pageInfo"></span>
+          <button type="button" id="nextBtn" disabled>Next →</button>
+        </nav>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>Local-Agent v1.0</span>
+      <span>•</span>
+      <span>100% local • No cloud • Your data stays on your machine</span>
+    </footer>
+  </div>
+
+  <script src="https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js"></script>
+  <script src="/static/js/app.js"></script>
+  <script src="/static/js/visualization.js"></script>
+</body>
+</html>

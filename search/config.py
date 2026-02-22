@@ -14,6 +14,7 @@ DEFAULT = {
     "index": {
         "max_tokens": 1200,
         "overlap": 80,
+        "sentence_chunking": True,
         "embed_batch": 1024,
         "upsert_batch": 4000,
         "allow_exts": [".txt", ".md", ".pdf", ".docx", ".html", ".htm", ".rtf"],
@@ -49,7 +50,14 @@ DEFAULT = {
         "early_pos_boost": 0.10,
         "cache_size": 128,
         "snippet_radius": 50,
-        "max_results_per_file": 1
+        "max_results_per_file": 1,
+        "expand_query": True,
+        "min_score_threshold": 0.08,
+        "min_score_browser": 0.12,
+    },
+    "embedding": {
+        "model": "sentence-transformers/all-MiniLM-L6-v2",
+        "dim": 384,
     },
     "qdrant": {
         "url": "http://localhost:6333",
@@ -64,6 +72,12 @@ DEFAULT = {
         "catalog": "store/catalog.db",
         "frontier": "store/frontier.json",
         "benchmarks": "store/runs"
+    },
+    "browser": {
+        "enabled": True,
+        "enabled_browsers": ["chrome", "firefox"],
+        "max_bookmarks": 10000,
+        "max_history": 5000,
     }
 }
 
@@ -150,24 +164,34 @@ def get_config(config_path: str = None) -> Dict[str, Any]:
 def validate_config(config: Dict) -> bool:
     """Validate configuration values."""
     try:
+        from .validation import validate_chunk_params
+
         # Validate search weights sum to reasonable range
         bm25_weight = config["search"]["bm25_weight"]
         cosine_weight = config["search"]["cosine_weight"]
-        
+
         if not (0 <= bm25_weight <= 1 and 0 <= cosine_weight <= 1):
             logger.error("Search weights must be between 0 and 1")
             return False
-        
+
         # Validate timeout is positive
         if config["search"]["timeout_sec"] <= 0:
             logger.error("Search timeout must be positive")
             return False
-        
+
         # Validate batch sizes are positive
         if config["index"]["embed_batch"] <= 0 or config["index"]["upsert_batch"] <= 0:
             logger.error("Batch sizes must be positive")
             return False
-        
+
+        # Validate chunk params
+        max_tokens = config["index"].get("max_tokens", 1200)
+        overlap = config["index"].get("overlap", 80)
+        valid, err = validate_chunk_params(max_tokens, overlap)
+        if not valid:
+            logger.error(f"Invalid chunk params: {err}")
+            return False
+
         return True
         
     except KeyError as e:

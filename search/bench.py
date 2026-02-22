@@ -306,7 +306,9 @@ def main():
             test_dir = create_test_environment()
             test_paths = [test_dir]
         else:
-            test_paths = args.paths or ["/Users/tathagatasaha/Desktop/localagentandcliwithvectordb/README.md"]
+            project_readme = Path(__file__).resolve().parent.parent / "README.md"
+            default_path = str(project_readme) if project_readme.exists() else str(Path.home() / "Documents")
+            test_paths = args.paths or [default_path]
         
         # Run end-to-end benchmark
         result = benchmark.benchmark_end_to_end(test_paths, args.queries)

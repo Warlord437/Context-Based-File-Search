@@ -351,6 +351,81 @@ del indexer  # __del__ calls close()
 
 ---
 
-**Last Updated**: January 26, 2026  
-**Total Fixes Applied**: 4  
+## Fix #5: Input Validation ✅
+
+**Issue**: Missing input validation - path traversal risk, FTS5 query injection, unvalidated config  
+**Severity**: HIGH  
+**Status**: ✅ FIXED  
+**Date**: January 26, 2026
+
+### Problem
+
+- No validation of file paths (invalid paths, null bytes)
+- No sanitization of FTS5 query strings (OR/AND/NOT injection)
+- No validation of chunk sizes or config values
+
+### Solution
+
+1. ✅ **Created `search/validation.py`** - Sanitization and validation functions
+2. ✅ **FTS5 query sanitization** - Extract safe tokens, filter operators, limit length
+3. ✅ **Path validation** - Resolve, check length, reject null bytes
+4. ✅ **Chunk param validation** - max_tokens 10-10000, overlap validated
+5. ✅ **Integrated** - Retriever, storage, indexer, config, web API
+
+### Files Modified
+
+- `search/validation.py` - **NEW**
+- `search/retriever.py` - sanitize_fts_query, validate_search_params
+- `search/storage.py` - sanitize in fts_search
+- `search/indexer.py` - validate roots and chunk params
+- `search/config.py` - validate chunk params
+- `web/server.py` - validate index path
+
+### Impact
+
+- ✅ FTS5 query injection prevented
+- ✅ Invalid paths rejected with clear errors
+- ✅ Config and chunk params validated
+- ✅ Defense-in-depth at multiple layers
+
+See [Fixes/FIX_INPUT_VALIDATION_ISSUE.md](Fixes/FIX_INPUT_VALIDATION_ISSUE.md) for details.
+
+---
+
+## Fix #6: Qdrant API Compatibility ✅
+
+**Issue**: `'QdrantClient' object has no attribute 'search'` — vector search failing with qdrant-client 1.7+  
+**Severity**: CRITICAL  
+**Status**: ✅ FIXED  
+**Date**: January 2026
+
+### Problem
+
+- `client.search()` was deprecated/removed in newer qdrant-client versions
+- Benchmarks and search returned: `Vector search failed: 'QdrantClient' object has no attribute 'search'`
+
+### Solution
+
+- Switched to `client.query_points()` (current API)
+- Response handling updated for `response.points` (list of ScoredPoint)
+- Added `text` snippet to payload for Qdrant dashboard visualization
+
+### Files Modified
+
+- `search/storage.py` - `vector_search()` now uses `query_points()`
+- `search/indexer.py` - Payload extended with `text` (first 500 chars)
+- `requirements.txt` - Pinned `qdrant-client>=1.7.0`
+
+### Impact
+
+- ✅ Vector search works with qdrant-client 1.7+
+- ✅ Benchmarks complete successfully
+- ✅ Payload includes text for dashboard preview
+
+See [VISUALIZATION.md](VISUALIZATION.md) for how to view file clusters and use the Qdrant dashboard.
+
+---
+
+**Last Updated**: January 2026  
+**Total Fixes Applied**: 6  
 **Fixes In Progress**: 0

@@ -64,9 +64,14 @@ def normalize_path(path: str) -> str:
     return str(Path(path).resolve())
 
 if __name__ == "__main__":
-    # Test ID generation
-    test_path = "/Users/tathagatasaha/Desktop/localagentandcliwithvectordb/README.md"
-    
+    # Test ID generation (use project README if present)
+    project_readme = Path(__file__).resolve().parent.parent / "README.md"
+    test_path = str(project_readme) if project_readme.exists() else None
+
+    if not test_path:
+        print("No README.md found. Run from project root or pass a file path.")
+        exit(0)
+
     stats = get_file_stats(test_path)
     if stats:
         fid = file_id(test_path, stats["mtime"], stats["size"])
