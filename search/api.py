@@ -169,7 +169,7 @@ class SearchAPI:
             if not opts.exact_match:
                 snippet = highlight_query(snippet, query)
         
-        # Determine file type
+        # Determine file type (enables filtering by file_type in search)
         file_type = "unknown"
         if chunk.path:
             if chunk.path.startswith("browser:"):
@@ -184,6 +184,8 @@ class SearchAPI:
                 file_type = "html"
             elif chunk.path.endswith(('.docx', '.doc')):
                 file_type = "document"
+            elif chunk.path.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp')):
+                file_type = "image"
         
         return SearchHit(
             path=chunk.path,

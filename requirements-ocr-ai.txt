@@ -1,0 +1,9 @@
+# Optional: AI-based OCR backends (faster on GPU than Tesseract)
+# Install one of these for ocr_backend: paddleocr | easyocr in config.yaml
+#
+# PaddleOCR (~12 fps on GPU, best speed)
+paddlepaddle>=2.5.0
+paddleocr>=2.7.0
+#
+# EasyOCR (~4 fps on GPU, good accuracy)
+# easyocr>=1.7.0

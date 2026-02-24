@@ -210,7 +210,7 @@ tests/
 | **Word** | `.docx`, `.doc` | python-docx | Full document support |
 | **HTML** | `.html`, `.htm` | BeautifulSoup + lxml | Clean text extraction |
 | **Code** | `.py`, `.js`, `.ts`, `.java`, `.cpp`, `.c`, `.h` | Native | Syntax highlighting ready |
-| **Images** | `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tiff` | Tesseract OCR | Optional, requires `--ocr` |
+| **Images** | `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.tiff` | Tesseract / PaddleOCR / EasyOCR | Optional, requires `--ocr`; set `ocr_backend` in config |
 | **Data** | `.csv`, `.tsv`, `.json`, `.yaml`, `.xml` | Native | Structured data |
 
 ### Performance Optimizations
@@ -248,6 +248,7 @@ index:
   upsert_batch: 4000
   allow_exts: [".txt", ".md", ".markdown", ".pdf", ".docx", ".html", ".htm", ".rtf"]
   ocr_enabled: false
+  ocr_backend: tesseract   # tesseract | paddleocr | easyocr (AI backends faster on GPU)
   max_pdf_pages: 50
   file_extract_timeout_sec: 10
 
@@ -425,6 +426,21 @@ curl http://localhost:6333/health
 # Make sure you're in the project root
 cd /path/to/local-agent
 # The search module should be in the current directory
+```
+
+**Q: "How do I limit OCR to specific folders?"**
+
+Set `ocr_paths: ["Pictures", "Screenshots"]` in `config.yaml`. OCR will only run on images under those paths, speeding up indexing when scanning mixed folders (e.g. Documents with few images).
+
+**Q: "How do I use faster AI-based OCR?"**
+
+Set `ocr_backend: paddleocr` or `ocr_backend: easyocr` in `config.yaml` (under `index:`). AI backends are faster on GPU (PaddleOCR ~12 fps, EasyOCR ~4 fps vs Tesseract ~8 fps on CPU). Install optional deps:
+```bash
+# PaddleOCR (recommended for GPU)
+pip install paddlepaddle paddleocr
+
+# EasyOCR (alternative)
+pip install easyocr
 ```
 
 **Q: "OCR not working"**

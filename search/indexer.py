@@ -12,6 +12,7 @@ import hashlib
 
 from .config import get_config
 from .storage import create_storage
+from .ocr import get_ocr_extractor
 from .types import Chunk, FrontierState, IndexStats
 from .ids import file_id, chunk_id, generate_file_sha256, get_file_stats
 from .model_loader import get_embedding_model
@@ -28,6 +29,14 @@ class BFSIndexer:
         self.max_items = self.config["index"].get("max_items", 1000)
         self.exclude_patterns = self.config["index"]["exclude_patterns"]
         self.allow_exts = set(self.config["index"]["allow_exts"])
+        self.ocr_enabled = self.config["index"].get("ocr_enabled", False)
+        self.ocr_backend = self.config["index"].get("ocr_backend", "tesseract")
+        self.ocr_only_for_images = self.config["index"].get("ocr_only_for_images", True)
+        self.ocr_paths = self.config["index"].get("ocr_paths") or []
+        if self.ocr_enabled:
+            self.allow_exts |= {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif", ".webp"}
+        self._image_exts = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".tif", ".webp"}
+        self._text_exts = {".txt", ".md", ".markdown", ".pdf", ".docx", ".html", ".htm", ".rtf"}
         self.max_pdf_pages = self.config["index"]["max_pdf_pages"]
         self.extraction_timeout = self.config["index"]["extraction_timeout"]
         
@@ -94,6 +103,9 @@ class BFSIndexer:
         
         logger.info(f"Processing {len(current_level)} items from frontier")
         
+        # Prioritize text files (fast) over images (slow OCR) for better perceived indexing speed
+        current_level = self._sort_for_processing(current_level)
+        
         # Process current level
         for item_path in current_level:
             try:
@@ -136,6 +148,27 @@ class BFSIndexer:
         # Mark as seen
         frontier.seen[item_path] = device_inode
     
+    def _sort_for_processing(self, items: List[str]) -> List[str]:
+        """Prioritize text files (fast) over images (slow OCR) for better indexing throughput."""
+        def _priority(item: str) -> int:
+            p = Path(item)
+            if not p.exists() or not p.is_file():
+                return 1  # dirs and missing: middle
+            ext = p.suffix.lower()
+            if ext in self._text_exts:
+                return 0  # text first
+            if ext in self._image_exts:
+                return 2  # images last (OCR is slow)
+            return 1
+        return sorted(items, key=_priority)
+    
+    def _image_in_ocr_paths(self, file_path: str) -> bool:
+        """Check if image path matches ocr_paths (when set). Empty ocr_paths = all match."""
+        if not self.ocr_paths:
+            return True
+        path_norm = str(Path(file_path).resolve()).lower()
+        return any(part.lower() in path_norm for part in self.ocr_paths)
+    
     def _process_file(self, file_path: str):
         """Process a single file."""
         path = Path(file_path)
@@ -145,6 +178,14 @@ class BFSIndexer:
         # Check file extension
         if path.suffix.lower() not in self.allow_exts:
             logger.info(f"Skipping unsupported file (extension {path.suffix.lower()}): {file_path}")
+            self.stats.files_skipped += 1
+            return
+        
+        # OCR only for images in ocr_paths when configured (skip images elsewhere for faster indexing)
+        if (path.suffix.lower() in self._image_exts and 
+                self.ocr_enabled and 
+                not self._image_in_ocr_paths(file_path)):
+            logger.debug(f"Skipping image outside ocr_paths: {file_path}")
             self.stats.files_skipped += 1
             return
         
@@ -269,6 +310,8 @@ class BFSIndexer:
                 return self._extract_html(file_path)
             elif suffix in ['.docx', '.doc']:
                 return self._extract_docx(file_path)
+            elif suffix in ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.tif', '.webp']:
+                return self._extract_image(file_path) if self.ocr_enabled else None
             else:
                 # Try as plain text
                 return self._extract_txt(file_path)
@@ -424,7 +467,17 @@ class BFSIndexer:
         except Exception as e:
             logger.error(f"DOCX extraction failed for {file_path}: {e}")
             return None
-    
+
+    def _extract_image(self, file_path: str) -> Optional[str]:
+        """Extract text from image using configured OCR backend (tesseract, paddleocr, easyocr)."""
+        extract = get_ocr_extractor(self.ocr_backend)
+        text = extract(file_path)
+        # Fallback to tesseract if AI backend failed and we're not already using it
+        if text is None and self.ocr_backend != "tesseract":
+            extract = get_ocr_extractor("tesseract")
+            text = extract(file_path)
+        return text
+
     def _chunk_text(self, text: str, file_path, file_id: str) -> List[Chunk]:
         """
         Chunk text into overlapping segments with sentence-aware boundaries.

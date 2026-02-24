@@ -19,6 +19,9 @@ DEFAULT = {
         "upsert_batch": 4000,
         "allow_exts": [".txt", ".md", ".pdf", ".docx", ".html", ".htm", ".rtf"],
         "ocr_enabled": False,
+        "ocr_only_for_images": True,
+        "ocr_paths": [],
+        "ocr_backend": "tesseract",  # tesseract | paddleocr | easyocr
         "max_pdf_pages": 50,
         "extraction_timeout": 10,
         "exclude_patterns": [
@@ -145,6 +148,10 @@ def _apply_env_overrides(config: Dict) -> Dict:
         config["index"]["max_tokens"] = int(os.getenv("LA_INDEX_MAX_TOKENS"))
     if os.getenv("LA_INDEX_OCR_ENABLED"):
         config["index"]["ocr_enabled"] = os.getenv("LA_INDEX_OCR_ENABLED").lower() == "true"
+    if os.getenv("LA_INDEX_OCR_BACKEND"):
+        config["index"]["ocr_backend"] = os.getenv("LA_INDEX_OCR_BACKEND").lower().strip()
+    if os.getenv("LA_INDEX_OCR_PATHS"):
+        config["index"]["ocr_paths"] = [p.strip() for p in os.getenv("LA_INDEX_OCR_PATHS").split(",") if p.strip()]
     
     # Search settings
     if os.getenv("LA_SEARCH_TIMEOUT"):

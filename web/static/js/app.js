@@ -76,6 +76,7 @@ async function search(page = 1) {
       per_page: 10,
       file_type: fileTypeInput.value.trim() || null,
       path_contains: pathContainsInput.value.trim() || null,
+      exclude_images: document.getElementById('excludeImages')?.checked ?? false,
       expand_query: expandQueryCheckbox.checked,
     };
 

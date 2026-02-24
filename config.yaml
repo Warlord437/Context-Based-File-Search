@@ -22,6 +22,13 @@ index:
   max_items: 1000
   allow_exts: [".txt", ".md", ".markdown", ".pdf", ".docx", ".html", ".htm", ".rtf"]
   ocr_enabled: false
+  # OCR only for non-text files (images). Never runs on PDFs/text docs.
+  ocr_only_for_images: true
+  # When set, only index images under these paths (e.g. Pictures, Screenshots).
+  # Empty = index all images when ocr_enabled. Speeds up indexing by skipping images elsewhere.
+  ocr_paths: []  # e.g. ["Pictures", "Screenshots"]
+  # OCR backend: tesseract (default) | paddleocr | easyocr
+  ocr_backend: tesseract
   max_pdf_pages: 50
   extraction_timeout: 10
   # Exclude patterns for system-wide scans
@@ -47,6 +54,7 @@ search:
   vec_k: 150
   merge_k: 200
   timeout_sec: 2.5
+  cache_size: 256  # Search result cache (higher = better for repeated queries)
   # Hard limit: abort search if exceeds (seconds). 20 = max for heavy queries.
   max_search_sec: 20
   # Run vector and lexical search in parallel

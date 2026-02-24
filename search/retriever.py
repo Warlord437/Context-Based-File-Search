@@ -369,15 +369,26 @@ class HybridRetriever:
             return chunks
 
         file_ext = filters.get("file_ext")
+        exclude_file_ext = filters.get("exclude_file_ext")
         path_contains = filters.get("path_contains")
+
+        def _norm_ext(x: str) -> str:
+            x = x.lower().strip()
+            return x if x.startswith(".") else "." + x
 
         filtered = []
         for chunk in chunks:
             path_lower = chunk.path.lower()
 
             if file_ext:
-                ext_ok = any(path_lower.endswith(e.lower()) for e in file_ext)
+                ext_ok = any(path_lower.endswith(_norm_ext(e)) for e in file_ext)
                 if not ext_ok:
+                    continue
+
+            if exclude_file_ext:
+                # Exclude images when searching documents only
+                ext_excluded = any(path_lower.endswith(_norm_ext(e)) for e in exclude_file_ext)
+                if ext_excluded:
                     continue
 
             if path_contains and path_contains.lower() not in path_lower:

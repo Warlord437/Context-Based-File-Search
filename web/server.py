@@ -58,6 +58,7 @@ class SearchRequest(BaseModel):
     per_page: int = 10
     file_type: Optional[str] = None
     path_contains: Optional[str] = None
+    exclude_images: bool = False  # Exclude image files when searching documents only
     expand_query: bool = True
 
 
@@ -119,6 +120,8 @@ def search(request: SearchRequest) -> Dict[str, Any]:
             exts = [f".{e.strip()}" if not e.strip().startswith(".") else e.strip()
                     for e in request.file_type.split(",")]
             filters["file_ext"] = exts
+        if request.exclude_images:
+            filters["exclude_file_ext"] = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tiff", ".webp"]
         if request.path_contains:
             filters["path_contains"] = request.path_contains
 
