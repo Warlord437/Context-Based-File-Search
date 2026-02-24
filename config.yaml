@@ -4,6 +4,10 @@
 index:
   # Sentence-aware chunking (respects . ! ? boundaries)
   sentence_chunking: true
+  # Optimization: parallel extraction workers (0 = disabled)
+  extraction_workers: 4
+  # Optimization: accumulate chunks before embedding (reduces model calls)
+  embed_accumulate_batch: 2048
   # default path(s) to index when running automated tasks or recursive index
   paths:
     - "~/Documents"
@@ -13,8 +17,8 @@ index:
   chunk_size: 500
   max_tokens: 1200
   overlap: 80
-  embed_batch: 1024
-  upsert_batch: 4000
+  embed_batch: 2048
+  upsert_batch: 8000
   max_items: 1000
   allow_exts: [".txt", ".md", ".markdown", ".pdf", ".docx", ".html", ".htm", ".rtf"]
   ocr_enabled: false
@@ -39,10 +43,16 @@ index:
 
 search:
   top_k: 50
-  lex_k: 200
-  vec_k: 300
-  merge_k: 400
+  lex_k: 100
+  vec_k: 150
+  merge_k: 200
   timeout_sec: 2.5
+  # Hard limit: abort search if exceeds (seconds). 20 = max for heavy queries.
+  max_search_sec: 20
+  # Run vector and lexical search in parallel
+  parallel_search: true
+  # Query expansion adds latency; disable for faster search
+  expand_query: false
   bm25_weight: 0.55
   cosine_weight: 0.45
   exact_boost: 0.20
@@ -72,6 +82,8 @@ paths:
 embedding:
   model: "sentence-transformers/all-MiniLM-L6-v2"
   dim: 384
+  # Use ONNX backend for 2-3x faster inference (pip install sentence-transformers[onnx])
+  use_onnx: false
 
 vectordb:
   use_qdrant: true
@@ -80,8 +92,9 @@ vectordb:
 
 llm:
   use_ollama: true
+  # Use smaller model for faster AI labels (phi2, qwen2:0.5b, or llama3.2:3b)
   model: "llama3.2:3b"
-  timeout_seconds: 30
+  timeout_seconds: 15
 
 logging:
   runs_path: "local-agent/store/runs"

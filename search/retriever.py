@@ -198,7 +198,7 @@ class HybridRetriever:
         }
         
         # Get all unique chunk IDs
-        all_chunk_ids = set(vec_candidates.keys()) | set(lex_candidates.keys())
+        all_chunk_ids = list(set(vec_candidates.keys()) | set(lex_candidates.keys()))
         
         if not all_chunk_ids:
             return []
@@ -207,6 +207,9 @@ class HybridRetriever:
         vec_scores_norm = self._normalize_scores(vec_candidates)
         lex_scores_norm = self._normalize_scores(lex_candidates)
         
+        # Batch fetch all chunk metadata and text (1-2 queries vs N)
+        batch_data = self.catalog.chunks_meta_and_text_batch(all_chunk_ids)
+        
         scored_chunks = []
         
         for chunk_id in all_chunk_ids:
@@ -214,10 +217,11 @@ class HybridRetriever:
             cosine_score = vec_scores_norm.get(chunk_id, 0.0)
             bm25_score = lex_scores_norm.get(chunk_id, 0.0)
             
-            # Get chunk metadata and text
-            chunk_meta = self.catalog.chunk_meta(chunk_id)
-            chunk_text = self.catalog.get_chunk_text(chunk_id)
-            
+            # Get chunk metadata and text from batch
+            pair = batch_data.get(chunk_id)
+            if not pair:
+                continue
+            chunk_meta, chunk_text = pair
             if not chunk_meta or not chunk_text:
                 continue
             
@@ -315,17 +319,26 @@ class HybridRetriever:
         filters = filters or {}
 
         start_time = time.time()
+        max_search_sec = self.search_config.get("max_search_sec", 20.0)
 
-        # Use expanded query for vector search (better semantic recall)
+        # Config: expand query (adds latency, disable for speed)
+        expand_query = expand_query and self.search_config.get("expand_query", False)
         embed_query_text = _expand_query_with_synonyms(query) if expand_query else query
 
-        # Embed query
+        # Embed query (with timeout for model load on cold start)
+        if time.time() - start_time > max_search_sec:
+            logger.warning("Search aborted: exceeded time limit before embedding")
+            return []
         query_embedding = self.embed_query(embed_query_text)
         if query_embedding is None:
             logger.error("Failed to embed query")
             return []
+        if time.time() - start_time > max_search_sec:
+            logger.warning("Search aborted: exceeded time limit after embedding")
+            return []
 
-        # Get candidates: vector uses expanded query, lexical uses original (exact keywords)
+        # Get candidates. Note: parallel_search disabled - SQLite catalog is not thread-safe.
+        # Batch chunk fetch and reduced k already provide significant speedup.
         vec_candidates = self.vector_candidates(query_embedding, timeout=timeout)
         lex_candidates = self.lexical_candidates(query)
 
@@ -342,6 +355,8 @@ class HybridRetriever:
         results = deduped_chunks[:k]
 
         elapsed = time.time() - start_time
+        if elapsed > max_search_sec:
+            logger.warning(f"Search exceeded {max_search_sec}s limit (took {elapsed:.1f}s), returning partial results")
         logger.info(f"Hybrid search completed in {elapsed:.3f}s: {len(results)} results")
 
         return results

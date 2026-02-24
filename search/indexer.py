@@ -34,6 +34,9 @@ class BFSIndexer:
         # Stats tracking
         self.stats = IndexStats()
         self._closed = False
+        # Optimization: accumulate chunks before embedding (batch across files)
+        self._embed_buffer: List[Chunk] = []
+        self._embed_accumulate_batch = self.config["index"].get("embed_accumulate_batch", 2048)
     
     def close(self):
         """Close all resources (database connections, etc.)."""
@@ -99,6 +102,9 @@ class BFSIndexer:
                 logger.error(f"Error processing {item_path}: {e}")
                 frontier.errors.append(f"{item_path}: {str(e)}")
                 self.stats.errors += 1
+        
+        # Flush any remaining chunks in embed buffer
+        self._flush_embed_buffer()
         
         # Save frontier state
         self._save_frontier(frontier)
@@ -202,15 +208,10 @@ class BFSIndexer:
             logger.error(f"Database operations failed for {file_path}: {e}")
             raise
         
-        # Step 4: Generate embeddings and upsert to Qdrant (external operation)
-        # If this fails, database is still consistent (file+chunks+FTS are saved)
-        # We can re-run embedding generation later if needed
-        try:
-            self._embed_and_upsert(chunks)
-        except Exception as e:
-            logger.warning(f"Embedding generation failed for {file_path}: {e}")
-            logger.warning("File metadata and chunks are saved, but embeddings are missing")
-            # Don't raise - database is consistent, just missing embeddings
+        # Step 4: Add chunks to embed buffer; flush when batch is full
+        self._embed_buffer.extend(chunks)
+        if len(self._embed_buffer) >= self._embed_accumulate_batch:
+            self._flush_embed_buffer()
         
         self.stats.chunks_created += len(chunks)
         logger.info(f"Processed file: {file_path} ({len(chunks)} chunks)")
@@ -527,8 +528,18 @@ class BFSIndexer:
             idx=chunk_idx
         )
     
+    def _flush_embed_buffer(self):
+        """Flush accumulated chunks: embed and upsert to Qdrant."""
+        if not self._embed_buffer:
+            return
+        chunks = self._embed_buffer
+        self._embed_buffer = []
+        self._embed_and_upsert(chunks)
+
     def _embed_and_upsert(self, chunks: List[Chunk]):
         """Generate embeddings and upsert to Qdrant (using cached model)."""
+        if not chunks:
+            return
         try:
             # Use cached model loader (loads once, reuses after)
             model = get_embedding_model()
@@ -539,8 +550,8 @@ class BFSIndexer:
             # Prepare texts
             texts = [chunk.text for chunk in chunks]
             
-            # Generate embeddings in batches
-            batch_size = self.config["index"]["embed_batch"]
+            # Generate embeddings in large batches (configurable)
+            batch_size = self.config["index"].get("embed_batch", 2048)
             embeddings = []
             
             for i in range(0, len(texts), batch_size):
@@ -565,7 +576,7 @@ class BFSIndexer:
                     }
                 })
             
-            # Upsert to Qdrant
+            # Upsert to Qdrant in large batches
             self.qdrant.upsert_vectors(points)
             
         except Exception as e:

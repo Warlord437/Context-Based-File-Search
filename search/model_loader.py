@@ -73,9 +73,23 @@ def get_embedding_model(device: Optional[str] = None, model_name: Optional[str] 
             return _model_cache
         
         # Load model (first time or device/model changed)
-        logger.info(f"Loading SentenceTransformer model '{model_name}' on device: {device}")
+        use_onnx = False
         try:
-            _model_cache = SentenceTransformer(model_name, device=device)
+            from .config import get_config
+            use_onnx = get_config().get("embedding", {}).get("use_onnx", False)
+        except Exception:
+            pass
+
+        logger.info(f"Loading SentenceTransformer model '{model_name}' on device: {device}" + (" (ONNX)" if use_onnx else ""))
+        try:
+            if use_onnx:
+                try:
+                    _model_cache = SentenceTransformer(model_name, backend="onnx", device=device)
+                except (ImportError, TypeError, ValueError) as e:
+                    logger.warning(f"ONNX backend failed ({e}), falling back to PyTorch")
+                    _model_cache = SentenceTransformer(model_name, device=device)
+            else:
+                _model_cache = SentenceTransformer(model_name, device=device)
             _model_device = device
             _model_name = model_name
             logger.info(f"Model loaded successfully on {device}")

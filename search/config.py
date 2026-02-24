@@ -5,7 +5,7 @@ Central configuration loader with sane defaults and environment overlay.
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,10 +40,12 @@ DEFAULT = {
     },
     "search": {
         "top_k": 50,
-        "lex_k": 200,
-        "vec_k": 300,
-        "merge_k": 400,
+        "lex_k": 100,
+        "vec_k": 150,
+        "merge_k": 200,
         "timeout_sec": 2.5,
+        "max_search_sec": 20.0,
+        "parallel_search": True,
         "bm25_weight": 0.55,
         "cosine_weight": 0.45,
         "exact_boost": 0.20,
@@ -51,7 +53,7 @@ DEFAULT = {
         "cache_size": 128,
         "snippet_radius": 50,
         "max_results_per_file": 1,
-        "expand_query": True,
+        "expand_query": False,
         "min_score_threshold": 0.08,
         "min_score_browser": 0.12,
     },
@@ -81,11 +83,29 @@ DEFAULT = {
     }
 }
 
+def _find_config_path() -> Optional[str]:
+    """Auto-detect config.yaml: project root, cwd, or env."""
+    candidates = [
+        os.getenv("LOCAL_AGENT_CONFIG"),
+        str(Path(__file__).parent.parent / "config.yaml"),
+        str(Path.cwd() / "config.yaml"),
+        str(Path.cwd() / ".." / "config.yaml"),
+    ]
+    for p in candidates:
+        if p and Path(p).exists():
+            return p
+    return None
+
+
 def load_config(config_path: str = None) -> Dict[str, Any]:
     """Load configuration from file and environment variables."""
     
     # Start with defaults
     config = DEFAULT.copy()
+    
+    # Auto-detect config path if not provided
+    if not config_path:
+        config_path = _find_config_path()
     
     # Load from YAML file if exists
     if config_path and Path(config_path).exists():

@@ -1,5 +1,6 @@
 qdrant-client>=1.7.0
 sentence-transformers
+# Optional: pip install sentence-transformers[onnx] for 2-3x faster embeddings
 ollama
 nltk>=3.8.0
 

@@ -40,6 +40,18 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def preload_embedding_model():
+    """Preload embedding model on startup so first search is fast (< 1s vs ~13s cold)."""
+    try:
+        from search.model_loader import get_embedding_model
+        model = get_embedding_model()
+        if model:
+            model.encode(["warmup"], convert_to_tensor=False)
+    except Exception:
+        pass
+
+
 class SearchRequest(BaseModel):
     query: str
     page: int = 1
@@ -226,16 +238,39 @@ def _save_label_cache(config: dict, cache: Dict[str, str]) -> None:
         pass
 
 
+def _heuristic_label(category: str) -> Optional[str]:
+    """Fast heuristic labels for common paths - avoids Ollama call."""
+    c = category.lower()
+    if "documents" in c or "docs" in c:
+        return "Documents"
+    if "downloads" in c:
+        return "Downloads"
+    if "desktop" in c:
+        return "Desktop"
+    if "code" in c or "src" in c or "dev" in c:
+        return "Code"
+    if "pdf" in c or ".pdf" in c:
+        return "PDFs"
+    if "mail" in c or "email" in c:
+        return "Email"
+    return None
+
+
 def _ai_category_label_impl(category: str, sample_text: str, config: dict) -> str:
-    """Single Ollama call - used by worker."""
+    """Single Ollama call - used by worker. Optimized: shorter prompt, smaller snippet."""
+    # Try heuristic first (no LLM call)
+    h = _heuristic_label(category)
+    if h:
+        return h
     if not sample_text or len(sample_text.strip()) < 20:
         return category.replace("/", " / ")
     try:
         import ollama
-        model = config.get("llm", {}).get("model", "mistral")
-        snippet = sample_text[:300].replace("\n", " ")
-        prompt = f"Topic of these snippets? Reply ONLY 2-5 words:\n{snippet}\nLabel:"
-        r = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}])
+        model = config.get("llm", {}).get("model", "llama3.2:3b")
+        snippet = sample_text[:200].replace("\n", " ")
+        prompt = f"Topic in 2-4 words: {snippet}\nLabel:"
+        timeout = config.get("llm", {}).get("timeout_seconds", 15)
+        r = ollama.chat(model=model, messages=[{"role": "user", "content": prompt}], options={"num_predict": 10})
         label = (r.get("message", {}).get("content", "") or "").strip()
         for c in ('"', "'", "\n", "."):
             label = label.strip(c)

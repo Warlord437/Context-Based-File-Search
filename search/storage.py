@@ -521,6 +521,49 @@ class Catalog:
         except Exception as e:
             logger.error(f"Failed to get chunk metadata for {chunk_id}: {e}")
             return None
+
+    def chunks_meta_and_text_batch(self, chunk_ids: List[str]) -> Dict[str, Tuple[Dict[str, Any], str]]:
+        """
+        Batch fetch chunk metadata and text for many chunk IDs in 2 queries.
+        Returns dict: chunk_id -> (meta_dict, text)
+        """
+        if not chunk_ids:
+            return {}
+        try:
+            seen = set(chunk_ids)
+            chunk_ids = list(seen)
+            placeholders = ",".join("?" * len(chunk_ids))
+
+            # Single query for metadata
+            meta_rows = self.conn.execute(f"""
+                SELECT c.chunk_id, c.file_id, c.idx, c.token_start, c.token_end, f.path
+                FROM chunks c
+                JOIN files f ON c.file_id = f.file_id
+                WHERE c.chunk_id IN ({placeholders})
+            """, chunk_ids).fetchall()
+
+            # Single query for text
+            text_rows = self.conn.execute(f"""
+                SELECT chunk_id, text FROM chunks_fts WHERE chunk_id IN ({placeholders})
+            """, chunk_ids).fetchall()
+
+            text_map = {r["chunk_id"]: (r["text"] or "") for r in text_rows}
+            result = {}
+            for row in meta_rows:
+                cid = row["chunk_id"]
+                meta = {
+                    "chunk_id": cid,
+                    "file_id": row["file_id"],
+                    "idx": row["idx"],
+                    "token_start": row["token_start"],
+                    "token_end": row["token_end"],
+                    "path": row["path"]
+                }
+                result[cid] = (meta, text_map.get(cid, ""))
+            return result
+        except Exception as e:
+            logger.error(f"Batch chunk fetch failed: {e}")
+            return {}
     
     def list_files_for_visualization(self, limit: int = 500) -> List[Dict[str, Any]]:
         """
