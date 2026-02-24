@@ -2,6 +2,25 @@
 
 This guide provides step-by-step instructions for installing and setting up Local-Agent on different operating systems.
 
+## Quick Install (One Line)
+
+```bash
+git clone https://github.com/yourusername/local-agent.git && cd local-agent && ./install.sh
+```
+
+Then activate the venv and run:
+
+```bash
+source .venv/bin/activate   # On Windows: .venv\Scripts\activate
+python3 local-agent/cli.py status
+python3 local-agent/cli.py bfs-index ~/Documents
+python3 local-agent/cli.py find "your query"
+```
+
+The `install.sh` script creates a virtual environment, installs dependencies, and starts Qdrant (if Docker is available).
+
+---
+
 ## System Requirements
 
 ### Minimum Requirements
@@ -19,24 +38,35 @@ This guide provides step-by-step instructions for installing and setting up Loca
 
 ## Installation Methods
 
-### Method 1: Direct Installation (Recommended)
+### Method 1: One-Line Install (Recommended)
+
+```bash
+git clone https://github.com/yourusername/local-agent.git && cd local-agent && ./install.sh
+source .venv/bin/activate
+```
+
+### Method 2: Manual Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/local-agent.git
 cd local-agent
 
-# Install Python dependencies
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate   # On Windows: .venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
 
-# Install optional dependencies for best performance
-pip install pypdfium2 pdfminer.six beautifulsoup4 lxml psutil
+# Start Qdrant (optional)
+docker compose up -d
 
 # Verify installation
 python3 local-agent/cli.py status
 ```
 
-### Method 2: Virtual Environment (Recommended for Development)
+### Method 3: Virtual Environment (Development)
 
 ```bash
 # Create virtual environment
@@ -53,7 +83,7 @@ pip install -r requirements-dev.txt  # For development
 python3 local-agent/cli.py status
 ```
 
-### Method 3: Docker Installation
+### Method 4: Docker Installation
 
 ```bash
 # Clone repository

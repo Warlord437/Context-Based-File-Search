@@ -52,61 +52,32 @@ Explore your indexed content as an interactive 3D force-directed graph. Blue nod
 
 ### Installation
 
+See **[INSTALL.md](INSTALL.md)** for full installation instructions.
+
+**Quick start:**
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/local-agent.git
-cd local-agent
-
-# Create virtual environment (recommended)
-python3 -m venv .venv
-source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Start Qdrant server
-docker-compose up -d
-
-# Visualize vectors in Qdrant dashboard (optional)
-# Open http://localhost:6333/dashboard → see [VISUALIZATION.md](VISUALIZATION.md) for file clusters & visualization
-
-# Index your documents using the new BFS indexer
-python3 local-agent/cli.py bfs-index ~/Documents
-
-# Search for content
-python3 local-agent/cli.py find "machine learning" --show-context
+git clone https://github.com/yourusername/local-agent.git && cd local-agent && ./install.sh
+source .venv/bin/activate
+python3 local-agent/cli.py status
 ```
 
 ### First-Time Setup
 
 ```bash
-# Check system status
-python3 local-agent/cli.py status
-
-# Index a directory with BFS streaming
+# Index a directory
 python3 local-agent/cli.py bfs-index ~/Documents --max-items 1000
 
 # Search for content
 python3 local-agent/cli.py find "your search query" --show-context
-
-# Reset database and start fresh (if needed)
-python3 local-agent/cli.py reset-db
 ```
 
 ### Web UI (Optional)
 
 ```bash
-# Start the web interface
 uvicorn web.server:app --reload --port 8000
-
-# Open http://localhost:8000 in your browser
 ```
 
-See [web/README.md](web/README.md) for details.
-
-### View File Clusters & Vector Visualization
-
-Open **http://localhost:6333/dashboard** to explore your indexed documents in Qdrant. See [VISUALIZATION.md](VISUALIZATION.md) for how to view file clusters, browse payloads, and interpret the vector space.
+See [web/README.md](web/README.md) for details. Open **http://localhost:6333/dashboard** for vector visualization.
 
 ## 📖 Usage Examples
 
