@@ -66,7 +66,13 @@ async function search(page = 1) {
 
   emptyState.style.display = 'none';
   resultsList.style.display = 'block';
-  resultsList.innerHTML = '<div class="empty-state">Searching...</div>';
+  resultsList.innerHTML = `
+    <div class="searching-skeleton">
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+      <div class="skeleton-card"></div>
+    </div>
+  `;
   pagination.style.display = 'none';
 
   try {
@@ -304,6 +310,20 @@ searchInput.addEventListener('keydown', (e) => {
 });
 prevBtn.addEventListener('click', () => search(currentPage - 1));
 nextBtn.addEventListener('click', () => search(currentPage + 1));
+
+// Filters toggle
+const filtersToggle = document.getElementById('filtersToggle');
+const filtersContainer = document.querySelector('.filters');
+if (filtersToggle && filtersContainer) {
+  filtersToggle.addEventListener('click', () => {
+    filtersContainer.classList.toggle('collapsed');
+    filtersToggle.classList.toggle('expanded', !filtersContainer.classList.contains('collapsed'));
+    filtersToggle.setAttribute('aria-expanded', !filtersContainer.classList.contains('collapsed'));
+  });
+  // Start expanded
+  filtersToggle.classList.add('expanded');
+  filtersToggle.setAttribute('aria-expanded', 'true');
+}
 
 // Init
 fetchStatus();

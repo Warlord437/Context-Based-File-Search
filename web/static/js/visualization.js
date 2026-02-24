@@ -4,8 +4,8 @@
  */
 
 const CATEGORY_COLORS = [
-  '#58a6ff', '#3fb950', '#d29922', '#f85149', '#a371f7',
-  '#79c0ff', '#56d364', '#e3b341', '#ff7b72', '#bc8cff',
+  '#22d3c7', '#0ea5e9', '#fbbf24', '#f87171', '#a78bfa',
+  '#34d399', '#38bdf8', '#fbbf24', '#fb7185', '#c084fc',
 ];
 
 let graphInstance = null;

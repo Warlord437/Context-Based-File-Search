@@ -1,5 +1,20 @@
 {
-  "queue": [],
+  "queue": [
+    "/Users/tathagatasaha/Music",
+    "/Users/tathagatasaha/nltk_data",
+    "/Users/tathagatasaha/Archive",
+    "/Users/tathagatasaha/Pictures",
+    "/Users/tathagatasaha/Desktop",
+    "/Users/tathagatasaha/Library",
+    "/Users/tathagatasaha/Docs",
+    "/Users/tathagatasaha/Public",
+    "/Users/tathagatasaha/Sandbox",
+    "/Users/tathagatasaha/Movies",
+    "/Users/tathagatasaha/Applications",
+    "/Users/tathagatasaha/Documents",
+    "/Users/tathagatasaha/Modena_log",
+    "/Users/tathagatasaha/Downloads"
+  ],
   "seen": {
     "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main": [
       16777232,
@@ -296,9 +311,13 @@
     "/Users/tathagatasaha/Downloads/Search_Functionality-Local-Agent-and-CLI-Vectors-main/web/static/js/app.js": [
       16777232,
       33718293
+    ],
+    "/Users/tathagatasaha": [
+      16777232,
+      269776
     ]
   },
   "processed_files": 57,
-  "processed_dirs": 17,
+  "processed_dirs": 18,
   "errors": []
 }
