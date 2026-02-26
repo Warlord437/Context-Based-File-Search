@@ -48,17 +48,17 @@ async function loadVisualization() {
       .catch(() => {});
 
     // Tab switching
+    const analyticsEl = document.getElementById('analyticsView');
     document.querySelectorAll('.viz-tab').forEach((tab) => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.viz-tab').forEach((t) => t.classList.remove('active'));
         tab.classList.add('active');
         const view = tab.dataset.view;
-        if (view === '3d') {
-          document.getElementById('graph3d').style.display = 'block';
-          document.getElementById('categoriesView').style.display = 'none';
-        } else {
-          document.getElementById('graph3d').style.display = 'none';
-          document.getElementById('categoriesView').style.display = 'block';
+        document.getElementById('graph3d').style.display = view === '3d' ? 'block' : 'none';
+        document.getElementById('categoriesView').style.display = view === 'categories' ? 'block' : 'none';
+        if (analyticsEl) {
+          analyticsEl.style.display = view === 'analytics' ? 'block' : 'none';
+          if (view === 'analytics') loadAnalytics(analyticsEl);
         }
       });
     });
@@ -160,6 +160,87 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+async function loadAnalytics(container) {
+  if (!container) return;
+  container.innerHTML = '<div class="viz-empty">Loading analytics...</div>';
+  try {
+    const res = await fetch(`${typeof API_BASE !== 'undefined' ? API_BASE : ''}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `{
+          analytics(topQueriesLimit: 10, searchSinceHours: 24, indexSinceHours: 168) {
+            fileTypeDistribution { fileType count }
+            topQueries { query count avgDuration }
+            searchPercentiles { p50 p95 p99 }
+            searchSummary { totalSearches cacheHits cacheHitRate avgDuration }
+            indexSummary { totalOps totalFiles avgDuration }
+          }
+        }`,
+      }),
+    });
+    const { data, errors } = await res.json();
+    if (errors) throw new Error(errors[0]?.message || 'GraphQL error');
+    const a = data?.analytics;
+    if (!a) throw new Error('No analytics data');
+
+    const fileTypes = a.fileTypeDistribution || [];
+    const topQueries = a.topQueries || [];
+    const pct = a.searchPercentiles || {};
+    const searchSum = a.searchSummary || {};
+    const indexSum = a.indexSummary || {};
+    const maxFileCount = Math.max(...fileTypes.map((f) => f.count), 1);
+
+    container.innerHTML = `
+      <div class="analytics-grid">
+        <div class="analytics-card">
+          <h3>File types</h3>
+          <div class="analytics-list">
+            ${fileTypes.map((f) => `
+              <div class="analytics-row">
+                <span class="analytics-label">${escapeHtml(f.fileType)}</span>
+                <span class="analytics-bar-wrap"><span class="analytics-bar" style="width: ${(f.count / maxFileCount) * 100}%"></span></span>
+                <span class="analytics-value">${f.count.toLocaleString()}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div class="analytics-card">
+          <h3>Search latency (p50 / p95 / p99)</h3>
+          <p class="analytics-metric">${(pct.p50 || 0).toFixed(2)}s / ${(pct.p95 || 0).toFixed(2)}s / ${(pct.p99 || 0).toFixed(2)}s</p>
+        </div>
+        <div class="analytics-card">
+          <h3>Search stats</h3>
+          <p class="analytics-metric">${(searchSum.totalSearches || 0).toLocaleString()} searches</p>
+          <p class="analytics-metric">${searchSum.cacheHitRate != null ? searchSum.cacheHitRate + '%' : '—'} cache hit rate</p>
+          <p class="analytics-metric">${(searchSum.avgDuration ?? 0).toFixed(2)}s avg</p>
+        </div>
+        <div class="analytics-card">
+          <h3>Index stats</h3>
+          <p class="analytics-metric">${(indexSum.totalOps || 0).toLocaleString()} ops</p>
+          <p class="analytics-metric">${(indexSum.totalFiles || 0).toLocaleString()} files</p>
+          <p class="analytics-metric">${(indexSum.avgDuration ?? 0).toFixed(2)}s avg</p>
+        </div>
+        <div class="analytics-card analytics-card-wide">
+          <h3>Top queries</h3>
+          ${topQueries.length ? `
+            <div class="analytics-list">
+              ${topQueries.slice(0, 8).map((q) => `
+                <div class="analytics-row">
+                  <span class="analytics-label" title="${escapeHtml(q.query)}">${escapeHtml(q.query.length > 40 ? q.query.slice(0, 40) + '…' : q.query)}</span>
+                  <span class="analytics-value">${q.count}×</span>
+                </div>
+              `).join('')}
+            </div>
+          ` : '<p class="analytics-muted">Run some searches to see top queries</p>'}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<div class="viz-empty viz-error">${escapeHtml(err.message)}</div>`;
+  }
 }
 
 // Lazy load when viz section scrolls into view (faster initial page load)

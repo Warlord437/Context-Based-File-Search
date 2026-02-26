@@ -55,30 +55,63 @@
           </details>
         </div>
 
-        <div class="filters">
-          <button type="button" class="filters-toggle" id="filtersToggle" aria-expanded="false" aria-controls="filtersInner">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"/>
-            </svg>
-            Filters
-          </button>
+        <div class="filters-card" id="filtersCard">
+          <div class="filters-header">
+            <button type="button" class="filters-toggle" id="filtersToggle" aria-expanded="true" aria-controls="filtersInner">
+              <svg class="filters-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+              </svg>
+              <span>Search filters</span>
+              <span class="filters-badge" id="filtersBadge" aria-live="polite">0 active</span>
+              <svg class="filters-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="6 9 12 15 18 9"/>
+              </svg>
+            </button>
+            <button type="button" class="filters-reset" id="filtersReset" title="Reset all filters">Reset</button>
+          </div>
           <div class="filters-inner" id="filtersInner">
-            <div class="filter-group">
-              <label for="fileType">File type</label>
-              <input type="text" id="fileType" placeholder="pdf, docx" aria-label="Filter by file type">
+            <div class="filters-presets">
+              <span class="filters-presets-label">Quick presets</span>
+              <div class="filters-presets-row">
+                <button type="button" class="filter-preset" data-preset="all" title="Search everything">All files</button>
+                <button type="button" class="filter-preset" data-preset="documents" title="PDF, DOCX, TXT, etc.">Documents</button>
+                <button type="button" class="filter-preset" data-preset="code" title="Code files only">Code</button>
+                <button type="button" class="filter-preset" data-preset="images-off" title="Exclude images for faster search">No images</button>
+              </div>
             </div>
-            <div class="filter-group">
-              <label for="pathContains">Path contains</label>
-              <input type="text" id="pathContains" placeholder="Documents" aria-label="Filter by path">
+            <div class="filters-grid">
+              <div class="filter-group">
+                <label for="fileType">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                  File types
+                </label>
+                <input type="text" id="fileType" placeholder="pdf, docx, txt" aria-label="Filter by file extension (comma-separated)">
+              </div>
+              <div class="filter-group">
+                <label for="pathContains">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  Path contains
+                </label>
+                <input type="text" id="pathContains" placeholder="Documents, Projects" aria-label="Filter by path substring">
+              </div>
             </div>
-            <label class="checkbox-label">
-              <input type="checkbox" id="expandQuery" checked>
-              Query expansion
-            </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="excludeImages" title="Exclude image files (faster, documents only)">
-              Exclude images
-            </label>
+            <div class="filters-options">
+              <span class="filters-options-label">Options</span>
+              <div class="filters-checkboxes">
+                <label class="filter-checkbox">
+                  <input type="checkbox" id="expandQuery" checked>
+                  <span class="filter-checkbox-custom"></span>
+                  <span class="filter-checkbox-text">Query expansion</span>
+                  <span class="filter-checkbox-hint">Add synonyms for broader results</span>
+                </label>
+                <label class="filter-checkbox">
+                  <input type="checkbox" id="excludeImages" title="Exclude image files (faster, documents only)">
+                  <span class="filter-checkbox-custom"></span>
+                  <span class="filter-checkbox-text">Exclude images</span>
+                  <span class="filter-checkbox-hint">Documents only, faster search</span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -97,11 +130,13 @@
           <div class="viz-tabs" role="tablist">
             <button type="button" class="viz-tab active" data-view="3d" role="tab">3D Graph</button>
             <button type="button" class="viz-tab" data-view="categories" role="tab" title="AI-categorized by content">Categories</button>
+            <button type="button" class="viz-tab" data-view="analytics" role="tab" title="Metrics & analytics">Analytics</button>
           </div>
         </div>
         <div class="viz-container" id="vizContainer">
           <div id="graph3d" class="graph-3d"></div>
           <div id="categoriesView" class="categories-view" style="display: none;"></div>
+          <div id="analyticsView" class="analytics-view" style="display: none;"></div>
         </div>
         <p class="viz-hint" id="vizHint">Loading...</p>
       </section>

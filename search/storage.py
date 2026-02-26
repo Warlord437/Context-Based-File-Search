@@ -667,7 +667,227 @@ class Catalog:
         except Exception as e:
             logger.error(f"Failed to get file stats: {e}")
             return {}
-    
+
+    def get_recent_indexing(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent indexing operations for metrics."""
+        try:
+            cursor = self.conn.execute(
+                "SELECT operation, files_processed, chunks_created, files_skipped, errors, "
+                "duration_seconds, timestamp, datetime(timestamp, 'unixepoch') as timestamp_str "
+                "FROM index_stats ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.debug(f"get_recent_indexing: {e}")
+            return []
+
+    def get_recent_searches(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent search operations for metrics."""
+        try:
+            cursor = self.conn.execute(
+                "SELECT query, total_candidates, vector_candidates, lexical_candidates, "
+                "final_results, duration_seconds, cache_hit, timestamp, "
+                "datetime(timestamp, 'unixepoch') as timestamp_str "
+                "FROM search_stats ORDER BY timestamp DESC LIMIT ?",
+                (limit,),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.debug(f"get_recent_searches: {e}")
+            return []
+
+    def get_index_stats_summary(self) -> Dict[str, Any]:
+        """Get aggregated indexing metrics."""
+        try:
+            cursor = self.conn.execute(
+                "SELECT COUNT(*) as total_ops, SUM(files_processed) as total_files, "
+                "SUM(chunks_created) as total_chunks, SUM(errors) as total_errors, "
+                "AVG(duration_seconds) as avg_duration "
+                "FROM index_stats"
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else {}
+        except Exception as e:
+            logger.debug(f"get_index_stats_summary: {e}")
+            return {}
+
+    def get_search_stats_summary(self) -> Dict[str, Any]:
+        """Get aggregated search metrics."""
+        try:
+            cursor = self.conn.execute(
+                "SELECT COUNT(*) as total_searches, SUM(cache_hit) as cache_hits, "
+                "AVG(duration_seconds) as avg_duration, AVG(final_results) as avg_results "
+                "FROM search_stats"
+            )
+            row = cursor.fetchone()
+            return dict(row) if row else {}
+        except Exception as e:
+            logger.debug(f"get_search_stats_summary: {e}")
+            return {}
+
+    def insert_index_stats(
+        self,
+        operation: str = "bfs_slice",
+        files_processed: int = 0,
+        chunks_created: int = 0,
+        files_skipped: int = 0,
+        errors: int = 0,
+        duration_seconds: float = 0,
+    ) -> None:
+        """Record an indexing operation for metrics."""
+        try:
+            self.conn.execute(
+                "INSERT INTO index_stats (operation, files_processed, chunks_created, files_skipped, errors, duration_seconds) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (operation, files_processed, chunks_created, files_skipped, errors, duration_seconds),
+            )
+            self.conn.commit()
+        except Exception as e:
+            logger.debug(f"insert_index_stats: {e}")
+
+    def insert_search_stats(
+        self,
+        query: str,
+        total_candidates: int = 0,
+        vector_candidates: int = 0,
+        lexical_candidates: int = 0,
+        final_results: int = 0,
+        duration_seconds: float = 0,
+        cache_hit: bool = False,
+    ) -> None:
+        """Record a search operation for metrics."""
+        try:
+            self.conn.execute(
+                "INSERT INTO search_stats (query, total_candidates, vector_candidates, lexical_candidates, "
+                "final_results, duration_seconds, cache_hit) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (query[:500], total_candidates, vector_candidates, lexical_candidates, final_results, duration_seconds, 1 if cache_hit else 0),
+            )
+            self.conn.commit()
+        except Exception as e:
+            logger.debug(f"insert_search_stats: {e}")
+
+    def get_file_type_distribution(self) -> List[Dict[str, Any]]:
+        """Get file count by type (extension) for analytics."""
+        try:
+            cursor = self.conn.execute("""
+                SELECT
+                  CASE
+                    WHEN path LIKE 'browser:%' THEN 'link'
+                    WHEN path LIKE '%.pdf' THEN 'pdf'
+                    WHEN path LIKE '%.md' OR path LIKE '%.markdown' THEN 'markdown'
+                    WHEN path LIKE '%.txt' THEN 'txt'
+                    WHEN path LIKE '%.docx' OR path LIKE '%.doc' THEN 'docx'
+                    WHEN path LIKE '%.html' OR path LIKE '%.htm' THEN 'html'
+                    WHEN path LIKE '%.png' OR path LIKE '%.jpg' OR path LIKE '%.jpeg' THEN 'image'
+                    ELSE 'other'
+                  END as file_type,
+                  COUNT(*) as count
+                FROM files
+                GROUP BY file_type
+                ORDER BY count DESC
+            """)
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.debug(f"get_file_type_distribution: {e}")
+            return []
+
+    def get_top_queries(self, limit: int = 20, since_hours: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get most frequent search queries."""
+        try:
+            if since_hours:
+                since_ts = int(time.time()) - (since_hours * 3600)
+                cursor = self.conn.execute("""
+                    SELECT query, COUNT(*) as count, AVG(duration_seconds) as avg_duration
+                    FROM search_stats WHERE timestamp >= ?
+                    GROUP BY LOWER(TRIM(query))
+                    ORDER BY count DESC LIMIT ?
+                """, (since_ts, limit))
+            else:
+                cursor = self.conn.execute("""
+                    SELECT query, COUNT(*) as count, AVG(duration_seconds) as avg_duration
+                    FROM search_stats
+                    GROUP BY LOWER(TRIM(query))
+                    ORDER BY count DESC LIMIT ?
+                """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.debug(f"get_top_queries: {e}")
+            return []
+
+    def get_search_time_series(
+        self, since_hours: int = 24, bucket_hours: int = 1
+    ) -> List[Dict[str, Any]]:
+        """Get search volume over time (bucket by hour)."""
+        try:
+            since_ts = int(time.time()) - (since_hours * 3600)
+            cursor = self.conn.execute("""
+                SELECT
+                  (timestamp / ?) * ? as bucket_start,
+                  datetime((timestamp / ?) * ?, 'unixepoch') as bucket_str,
+                  COUNT(*) as count,
+                  AVG(duration_seconds) as avg_duration,
+                  SUM(cache_hit) as cache_hits
+                FROM search_stats
+                WHERE timestamp >= ?
+                GROUP BY bucket_start
+                ORDER BY bucket_start
+            """, (bucket_hours * 3600, bucket_hours * 3600, bucket_hours * 3600, bucket_hours * 3600, since_ts))
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.debug(f"get_search_time_series: {e}")
+            return []
+
+    def get_index_time_series(
+        self, since_hours: int = 168, bucket_hours: int = 24
+    ) -> List[Dict[str, Any]]:
+        """Get indexing volume over time (bucket by day by default)."""
+        try:
+            since_ts = int(time.time()) - (since_hours * 3600)
+            bucket_sec = bucket_hours * 3600
+            cursor = self.conn.execute("""
+                SELECT
+                  (timestamp / ?) * ? as bucket_start,
+                  datetime((timestamp / ?) * ?, 'unixepoch') as bucket_str,
+                  SUM(files_processed) as files_processed,
+                  SUM(chunks_created) as chunks_created,
+                  COUNT(*) as ops_count
+                FROM index_stats
+                WHERE timestamp >= ?
+                GROUP BY bucket_start
+                ORDER BY bucket_start
+            """, (bucket_sec, bucket_sec, bucket_sec, bucket_sec, since_ts))
+            return [dict(row) for row in cursor.fetchall()]
+        except Exception as e:
+            logger.debug(f"get_index_time_series: {e}")
+            return []
+
+    def get_search_percentiles(self, since_hours: Optional[int] = None) -> Dict[str, float]:
+        """Get p50, p95, p99 for search duration (seconds)."""
+        try:
+            if since_hours:
+                since_ts = int(time.time()) - (since_hours * 3600)
+                cursor = self.conn.execute(
+                    "SELECT duration_seconds FROM search_stats WHERE timestamp >= ? ORDER BY duration_seconds",
+                    (since_ts,),
+                )
+            else:
+                cursor = self.conn.execute(
+                    "SELECT duration_seconds FROM search_stats ORDER BY duration_seconds"
+                )
+            rows = [r["duration_seconds"] for r in cursor.fetchall()]
+            if not rows:
+                return {"p50": 0, "p95": 0, "p99": 0}
+            n = len(rows)
+            return {
+                "p50": float(rows[int(n * 0.50)]),
+                "p95": float(rows[int(n * 0.95)]) if n > 20 else float(rows[-1]),
+                "p99": float(rows[int(n * 0.99)]) if n > 100 else float(rows[-1]),
+            }
+        except Exception as e:
+            logger.debug(f"get_search_percentiles: {e}")
+            return {"p50": 0, "p95": 0, "p99": 0}
+
     def close(self):
         """Close database connection."""
         if hasattr(self, 'conn') and self.conn:

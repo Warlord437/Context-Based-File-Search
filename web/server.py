@@ -23,6 +23,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
+# GraphQL
+from strawberry.fastapi import GraphQLRouter
+from web.graphql_schema import schema
+
 app = FastAPI(
     title="Local-Agent Search",
     description="Hybrid document search engine - semantic + lexical",
@@ -38,6 +42,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# GraphQL API for metrics
+graphql_app = GraphQLRouter(schema, graphql_ide="graphiql")
+app.include_router(graphql_app, prefix="/graphql")
 
 
 @app.on_event("startup")

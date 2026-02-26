@@ -311,19 +311,73 @@ searchInput.addEventListener('keydown', (e) => {
 prevBtn.addEventListener('click', () => search(currentPage - 1));
 nextBtn.addEventListener('click', () => search(currentPage + 1));
 
-// Filters toggle
+// Filters: toggle, presets, reset, active count
 const filtersToggle = document.getElementById('filtersToggle');
-const filtersContainer = document.querySelector('.filters');
-if (filtersToggle && filtersContainer) {
+const filtersCard = document.getElementById('filtersCard');
+const filtersBadge = document.getElementById('filtersBadge');
+const filtersReset = document.getElementById('filtersReset');
+
+const PRESETS = {
+  all: { fileType: '', pathContains: '', excludeImages: false, expandQuery: true },
+  documents: { fileType: 'pdf, docx, doc, txt, rtf, odt', pathContains: '', excludeImages: true, expandQuery: true },
+  code: { fileType: 'py, js, ts, jsx, tsx, html, css, json, yaml, md', pathContains: '', excludeImages: true, expandQuery: false },
+  'images-off': { fileType: '', pathContains: '', excludeImages: true, expandQuery: true },
+};
+
+function updateFiltersBadge() {
+  if (!filtersBadge) return;
+  let count = 0;
+  if (fileTypeInput.value.trim()) count++;
+  if (pathContainsInput.value.trim()) count++;
+  if (document.getElementById('excludeImages')?.checked) count++;
+  if (!expandQueryCheckbox.checked) count++;
+  filtersBadge.textContent = count ? `${count} active` : '0 active';
+  filtersBadge.classList.toggle('active', count > 0);
+}
+
+function applyPreset(presetId) {
+  const p = PRESETS[presetId];
+  if (!p) return;
+  fileTypeInput.value = p.fileType;
+  pathContainsInput.value = p.pathContains;
+  const excludeImagesEl = document.getElementById('excludeImages');
+  if (excludeImagesEl) excludeImagesEl.checked = p.excludeImages;
+  expandQueryCheckbox.checked = p.expandQuery;
+  document.querySelectorAll('.filter-preset').forEach((btn) => btn.classList.remove('active'));
+  const btn = document.querySelector(`.filter-preset[data-preset="${presetId}"]`);
+  if (btn) btn.classList.add('active');
+  updateFiltersBadge();
+}
+
+function resetFilters() {
+  applyPreset('all');
+}
+
+if (filtersToggle && filtersCard) {
   filtersToggle.addEventListener('click', () => {
-    filtersContainer.classList.toggle('collapsed');
-    filtersToggle.classList.toggle('expanded', !filtersContainer.classList.contains('collapsed'));
-    filtersToggle.setAttribute('aria-expanded', !filtersContainer.classList.contains('collapsed'));
+    filtersCard.classList.toggle('collapsed');
+    const expanded = !filtersCard.classList.contains('collapsed');
+    filtersToggle.classList.toggle('expanded', expanded);
+    filtersToggle.setAttribute('aria-expanded', expanded);
   });
-  // Start expanded
   filtersToggle.classList.add('expanded');
   filtersToggle.setAttribute('aria-expanded', 'true');
 }
+
+if (filtersReset) filtersReset.addEventListener('click', resetFilters);
+
+document.querySelectorAll('.filter-preset').forEach((btn) => {
+  btn.addEventListener('click', () => applyPreset(btn.dataset.preset));
+});
+
+[fileTypeInput, pathContainsInput, expandQueryCheckbox, document.getElementById('excludeImages')].forEach((el) => {
+  if (el) el.addEventListener('change', () => { document.querySelectorAll('.filter-preset').forEach((b) => b.classList.remove('active')); updateFiltersBadge(); });
+});
+[fileTypeInput, pathContainsInput].forEach((el) => {
+  if (el) el.addEventListener('input', updateFiltersBadge);
+});
+
+updateFiltersBadge();
 
 // Init
 fetchStatus();

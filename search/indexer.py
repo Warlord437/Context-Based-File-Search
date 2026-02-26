@@ -735,9 +735,22 @@ def run_bfs_slice(roots: List[str], **kwargs) -> IndexStats:
     start_time = time.time()
     stats = indexer.run_bfs_slice(valid_roots, kwargs.get("max_items", 1000))
     stats.duration_seconds = time.time() - start_time
-    
+
+    # Record metrics for GraphQL/dashboard
+    try:
+        indexer.catalog.insert_index_stats(
+            operation="bfs_slice",
+            files_processed=stats.files_processed,
+            chunks_created=stats.chunks_created,
+            files_skipped=stats.files_skipped,
+            errors=stats.errors,
+            duration_seconds=stats.duration_seconds,
+        )
+    except Exception:
+        pass
+
     logger.info(f"BFS slice completed: {stats.files_processed} files, {stats.chunks_created} chunks, {stats.duration_seconds:.2f}s")
-    
+
     return stats
 
 

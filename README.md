@@ -9,23 +9,46 @@ A production-ready, AI-powered document search engine with hybrid retrieval (vec
 - **System-wide Scanning**: Index your entire computer from root (/) with smart exclusions
 - **Hybrid Retrieval**: Combines vector similarity search with BM25 lexical search for best results
 - **Semantic + Keyword**: AI-powered search that understands context and meaning, with exact keyword fallback
+- **Search Filters**: Filter by file type (e.g. `pdf, docx`), path contains, or exclude images for documents-only search
+
+### 📷 **OCR (Optical Character Recognition)**
+- **Multiple Backends**: Tesseract (default), PaddleOCR, EasyOCR — choose based on speed/accuracy needs
+- **AI-based OCR**: PaddleOCR (~12 fps on GPU) and EasyOCR (~4 fps) for faster, more accurate image text extraction
+- **Selective OCR**: `ocr_paths` config limits OCR to specific folders (e.g. Pictures, Screenshots) for faster indexing
+- **Smart Prioritization**: Text files indexed first, images last — improves perceived indexing speed
 
 ### ⚡ **High-Performance Architecture**
 - **BFS Streaming Indexer**: Level-by-level, checkpointable indexing with time/size caps
 - **Apple Silicon MPS**: GPU acceleration for embeddings on M1/M2/M3 Macs
 - **Batch Processing**: 4000-vector batches for maximum throughput
 - **Qdrant Server**: Professional vector database with gRPC support and HNSW optimization
+- **Cached Model Loading**: Thread-safe singleton — 246,000× faster subsequent model access
 
 ### 🗄️ **Advanced Storage**
 - **Dual Storage**: Qdrant for vectors + SQLite FTS5 for lexical search
 - **Smart Cataloging**: File metadata, chunk tracking, and content hashing
 - **Incremental Updates**: Only processes changed files based on SHA256 hashing
-- **LRU Caching**: Fast repeated searches with intelligent result caching
+- **LRU Caching**: Fast repeated searches with configurable cache (default 256 entries)
+- **Atomic Transactions**: All-or-nothing database operations prevent corruption
+
+### 📊 **GraphQL API & Analytics**
+- **GraphQL Endpoint**: `/graphql` with GraphiQL IDE for flexible metrics queries
+- **Metrics**: System status, database stats, recent indexing/searches, aggregated summaries
+- **Analytics**: File type distribution, top queries, search/index time series, latency percentiles (p50/p95/p99)
+- **Auto-recorded Stats**: Indexing and search operations logged to `index_stats` and `search_stats` tables
+
+### 🌐 **Web UI**
+- **Modern Interface**: Refined dark theme with Sora typography and teal accents
+- **3D Visualization**: Interactive force-directed graph of indexed files and links
+- **Category View**: AI-categorized file breakdown with Ollama labels
+- **Analytics Tab**: Built-in dashboard for file types, search stats, top queries, latency
+- **Collapsible Filters**: File type, path contains, query expansion, exclude images
+- **Open in App**: One-click to open local files in default application
 
 ### 🛠️ **Developer-Friendly**
-- **Clean Architecture**: Modular design with separate storage, indexing, and retrieval layers
+- **Clean Architecture**: Modular design with separate storage, indexing, retrieval, and OCR layers
 - **Comprehensive Testing**: Full test suite with fixtures and benchmarks
-- **Performance Metrics**: Detailed timing and improvement tracking
+- **Performance Metrics**: Detailed timing, analytics, and GraphQL introspection
 - **Extensible**: Plugin architecture for custom file types and parsers
 
 ## 📸 Preview
@@ -78,6 +101,40 @@ uvicorn web.server:app --reload --port 8000
 ```
 
 See [web/README.md](web/README.md) for details. Open **http://localhost:6333/dashboard** for vector visualization.
+
+### GraphQL API (Metrics)
+
+A GraphQL endpoint at `/graphql` exposes metrics for dashboards and monitoring:
+
+```bash
+# Interactive GraphiQL IDE
+open http://localhost:8000/graphql
+
+# Example query (all metrics in one call)
+curl -X POST http://localhost:8000/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ metrics(recentLimit: 5) { system { status filesIndexed vectorsCount } database { totalFiles totalChunks } indexSummary { totalOps avgDuration } searchSummary { totalSearches cacheHits } } }"}'
+```
+
+**Available queries:**
+- **Metrics:** `systemStatus`, `databaseStats`, `recentIndexing`, `recentSearches`, `indexStatsSummary`, `searchStatsSummary`, `metrics` (all-in-one)
+- **Analytics:** `fileTypeDistribution`, `topQueries`, `searchTimeSeries`, `indexTimeSeries`, `searchPercentiles`, `analytics` (full dashboard)
+
+**Example analytics query:**
+```graphql
+{
+  analytics(
+    topQueriesLimit: 20
+    searchSinceHours: 24
+    indexSinceHours: 168
+  ) {
+    fileTypeDistribution { fileType count }
+    topQueries { query count avgDuration }
+    searchPercentiles { p50 p95 p99 }
+    searchTimeSeries { bucketStr count avgDuration cacheHits }
+  }
+}
+```
 
 ## 📖 Usage Examples
 
@@ -153,9 +210,9 @@ python3 -m search.bench --search-only --query "test query"
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
 │   BFS Indexer   │───▶│  File Extractor  │───▶│ Text Chunker    │
-│ (checkpointable) │    │ (PDF/HTML/DOCX)  │    │ (overlap=80)    │
+│(checkpointable) │    │ (PDF/HTML/DOCX)  │    │ (overlap=80)    │
 └─────────────────┘    └──────────────────┘    └─────────────────┘
-                                                         │
+                                                        │
 ┌─────────────────┐    ┌──────────────────┐             │
 │   Qdrant Store  │◀───│  Embedder        │◀────────────┘
 │ (HNSW vectors)  │    │ (MPS + batch)    │
@@ -183,16 +240,22 @@ search/
 ├── __init__.py          # Package initialization
 ├── config.py            # Configuration management
 ├── types.py             # Data contracts (Chunk, SearchHit, etc.)
-├── paths.py             # Store path constants
-├── schemas.sql          # SQLite schema definitions
+├── schemas.sql          # SQLite schema (index_stats, search_stats, db_stats)
 ├── ids.py               # ID generation utilities
-├── storage.py           # Qdrant + SQLite storage layer (with transactions)
-├── indexer.py           # BFS streaming indexer (with resource cleanup)
-├── retriever.py         # Hybrid retrieval logic (with resource cleanup)
-├── model_loader.py      # Thread-safe cached model loading (NEW in v1.0.1)
+├── storage.py           # Qdrant + SQLite storage (with analytics methods)
+├── indexer.py           # BFS streaming indexer (with OCR path filtering)
+├── retriever.py         # Hybrid retrieval (with file-type filters)
+├── ocr.py               # OCR backends (Tesseract, PaddleOCR, EasyOCR)
+├── model_loader.py      # Thread-safe cached model loading
 ├── snippets.py          # Text snippet generation
-├── api.py               # Public API with caching
+├── api.py               # Public API with caching + metrics recording
+├── browser_indexer.py   # Chrome/Firefox bookmarks & history
 └── bench.py             # Benchmarking suite
+
+web/
+├── server.py            # FastAPI server (REST + GraphQL)
+├── graphql_schema.py    # GraphQL metrics & analytics
+└── static/             # HTML, CSS, JS (3D viz, Analytics tab)
 
 local-agent/
 └── cli.py               # CLI interface
@@ -235,6 +298,11 @@ export EMBEDDING_MODEL="all-MiniLM-L6-v2"
 
 # Optional: Custom storage path
 export STORAGE_PATH="./store"
+
+# OCR
+export LA_INDEX_OCR_ENABLED="true"
+export LA_INDEX_OCR_BACKEND="paddleocr"  # tesseract | paddleocr | easyocr
+export LA_INDEX_OCR_PATHS="Pictures,Screenshots"
 ```
 
 ### Config File (`config.yaml`)
@@ -244,20 +312,23 @@ export STORAGE_PATH="./store"
 index:
   max_tokens: 1200
   overlap: 80
-  embed_batch: 1024
-  upsert_batch: 4000
+  embed_batch: 2048
+  upsert_batch: 8000
   allow_exts: [".txt", ".md", ".markdown", ".pdf", ".docx", ".html", ".htm", ".rtf"]
   ocr_enabled: false
+  ocr_only_for_images: true
+  ocr_paths: []  # e.g. ["Pictures", "Screenshots"] to limit OCR to those folders
   ocr_backend: tesseract   # tesseract | paddleocr | easyocr (AI backends faster on GPU)
   max_pdf_pages: 50
-  file_extract_timeout_sec: 10
+  extraction_timeout: 10
 
 search:
   top_k: 50
-  lex_k: 200
-  vec_k: 300
-  merge_k: 400
+  lex_k: 100
+  vec_k: 150
+  merge_k: 200
   timeout_sec: 2.5
+  cache_size: 256  # Search result cache
   bm25_weight: 0.55
   cosine_weight: 0.45
   exact_boost: 0.20
@@ -353,31 +424,24 @@ volumes:
 ### Project Structure
 
 ```
-local-agent/
-├── cli.py                 # Main CLI interface
-├── search/                # New hybrid search module
-│   ├── __init__.py
-│   ├── config.py          # Configuration management
-│   ├── types.py           # Data contracts
-│   ├── schemas.sql        # Database schema
-│   ├── paths.py           # Path constants
-│   ├── ids.py             # ID generation
-│   ├── storage.py         # Qdrant + SQLite storage
-│   ├── indexer.py         # BFS streaming indexer
-│   ├── retriever.py       # Hybrid retrieval
-│   ├── snippets.py        # Text snippets
-│   ├── api.py             # Public API
-│   └── bench.py           # Benchmarking
-├── tests/                 # Test suite
-│   ├── __init__.py
-│   └── test_search.py
-├── store/                 # Data storage
-│   ├── catalog.db         # SQLite catalog
-│   ├── frontier.json      # BFS frontier
-│   └── cache/             # LRU cache
-├── docker-compose.yml     # Qdrant server
-├── requirements.txt       # Dependencies
-└── config.yaml           # Configuration
+.
+├── search/                # Core search module
+│   ├── config.py         # Configuration + env overrides
+│   ├── storage.py        # Qdrant + SQLite (analytics methods)
+│   ├── indexer.py        # BFS indexer + OCR path filtering
+│   ├── retriever.py      # Hybrid retrieval + filters
+│   ├── ocr.py            # Tesseract / PaddleOCR / EasyOCR
+│   ├── api.py            # Search API + metrics recording
+│   ├── browser_indexer.py
+│   └── ...
+├── web/
+│   ├── server.py         # FastAPI (REST + GraphQL)
+│   ├── graphql_schema.py  # Metrics & analytics schema
+│   └── static/           # UI (index.html, css, js)
+├── local-agent/cli.py    # CLI
+├── store/                # catalog.db, frontier.json, cache/
+├── config.yaml
+└── requirements.txt
 ```
 
 ### Adding New File Types
@@ -510,22 +574,28 @@ isort search/ local-agent/
 
 ## 🎯 Current Status & Roadmap
 
-### ✅ What Works Now (v1.0 - Core Features)
+### ✅ What Works Now (v1.0+)
 
 - **BFS Streaming Indexer**: Level-by-level, checkpointable indexing
 - **Hybrid Search**: Vector (cosine similarity) + Lexical (BM25) search
 - **Multi-Format Support**: PDF, DOCX, HTML, Markdown, Code files, Images (OCR)
 - **Dual Storage**: Qdrant for vectors + SQLite FTS5 for lexical search
 - **Apple Silicon MPS**: GPU acceleration for embeddings
-- **Batch Processing**: Efficient 1024/4000 batch sizes
+- **Batch Processing**: Efficient 2048/8000 batch sizes
 - **Smart Cataloging**: File metadata, chunk tracking, SHA256 hashing
-- **CLI Interface**: `bfs-index`, `find`, `status`, `reset-db` commands
+- **CLI Interface**: `bfs-index`, `find`, `status`, `reset-db`, `index-browser`
+- **Web UI**: Search interface with 3D viz, Categories, Analytics tab
+- **REST API**: Search, index, status, open-file, visualization endpoints
+- **GraphQL API**: Metrics, analytics, time series, percentiles
+- **OCR**: Tesseract + PaddleOCR + EasyOCR with path-based filtering
+- **Search Filters**: File type, path contains, exclude images
+- **Browser Indexing**: Chrome/Firefox bookmarks and history
 
 ### 🚧 What's Coming Next (Priority Order)
 
 #### Phase 2: Enhanced Search & UX
 - [ ] **LLM Integration** - Question answering with context from indexed documents
-- [ ] **Advanced Filters** - Date range, file type, size, and custom filters
+- [ ] **Advanced Filters** - Date range, size, and custom metadata filters
 - [ ] **Boolean Queries** - AND, OR, NOT operators for complex searches
 - [ ] **Search History** - Track and reuse previous searches
 - [ ] **Result Ranking** - Machine learning-based relevance scoring
@@ -538,9 +608,6 @@ isort search/ local-agent/
 - [ ] **Root Scanning** - Safe system-wide indexing with comprehensive exclusions
 
 #### Phase 4: Interfaces & APIs
-- [ ] **Web UI** - Browser-based search interface with live previews
-- [ ] **REST API** - HTTP endpoints for external integrations
-- [ ] **GraphQL API** - Flexible query interface
 - [ ] **Browser Extension** - Search from browser with quick access
 - [ ] **Mobile App** - iOS/Android apps for on-the-go search
 
@@ -585,10 +652,10 @@ We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Priority areas for contributions:**
 1. LLM integration for question answering
-2. Web UI development
-3. File system watcher implementation
-4. Additional file type parsers
-5. Performance optimizations
+2. File system watcher implementation
+3. Additional file type parsers
+4. Performance optimizations
+5. GraphQL subscriptions for live metrics
 
 ## 📄 License
 
@@ -615,5 +682,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 *Transform your computer into a powerful, searchable knowledge base with hybrid AI search!*
 
-**Current Version**: 1.0.1 (Core Features + Critical Fixes)  
-**Next Release**: 2.0.0 (LLM Integration & Real-time Updates) - Q2 2026
+**Current Version**: 1.1.0 (OCR, GraphQL, Analytics, Web UI)  
+**Next Release**: 2.0.0 (LLM Integration & Real-time Updates)

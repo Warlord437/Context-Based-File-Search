@@ -476,5 +476,19 @@ def run_browser_index(config: Dict[str, Any] = None) -> IndexStats:
             stats.errors += len(batch_entries)
 
     stats.duration_seconds = time.time() - start_time
+
+    # Record metrics for GraphQL/dashboard
+    try:
+        catalog.insert_index_stats(
+            operation="browser_index",
+            files_processed=stats.files_processed,
+            chunks_created=stats.chunks_created,
+            files_skipped=0,
+            errors=stats.errors,
+            duration_seconds=stats.duration_seconds,
+        )
+    except Exception:
+        pass
+
     logger.info(f"Browser indexing complete: {chunks_created} entries, {stats.duration_seconds:.2f}s")
     return stats

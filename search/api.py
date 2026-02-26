@@ -69,6 +69,15 @@ class SearchAPI:
         if cached_result:
             logger.debug(f"Cache hit for query: {query}")
             cached_result["cache_hit"] = True
+            try:
+                self.retriever.catalog.insert_search_stats(
+                    query=query,
+                    final_results=cached_result.get("total_hits", 0),
+                    duration_seconds=cached_result.get("search_time", 0),
+                    cache_hit=True,
+                )
+            except Exception:
+                pass
             return cached_result
         
         # Perform search
@@ -128,12 +137,23 @@ class SearchAPI:
             
             # Cache result
             self._cache_result(cache_key, result)
-            
+
+            # Record metrics for GraphQL/dashboard
+            try:
+                self.retriever.catalog.insert_search_stats(
+                    query=query,
+                    final_results=total_hits,
+                    duration_seconds=result["search_time"],
+                    cache_hit=False,
+                )
+            except Exception:
+                pass
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Search failed for query '{query}': {e}")
-            return {
+            err_result = {
                 "query": query,
                 "total_hits": 0,
                 "page": page,
@@ -147,6 +167,16 @@ class SearchAPI:
                 "error": str(e),
                 "timestamp": int(time.time())
             }
+            try:
+                self.retriever.catalog.insert_search_stats(
+                    query=query,
+                    final_results=0,
+                    duration_seconds=err_result["search_time"],
+                    cache_hit=False,
+                )
+            except Exception:
+                pass
+            return err_result
     
     def _create_search_hit(self, chunk, query: str, opts: SearchOptions) -> SearchHit:
         """Create a SearchHit from a ScoredChunk."""
