@@ -1,0 +1,4 @@
+# SQLite DB and journaling files
+store/catalog.db
+store/catalog.db-wal
+store/catalog.db-shm

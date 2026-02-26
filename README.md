@@ -159,6 +159,10 @@ python3 local-agent/cli.py index-browser
 
 # Reset database and start fresh
 python3 local-agent/cli.py reset-db
+
+# Daemon mode: auto-index on startup + periodic re-index when idle
+python3 local-agent/cli.py daemon --startup-index --idle-updates
+python3 local-agent/cli.py daemon --startup-index --idle-updates --interval 60  # every 60 min
 ```
 
 See [BROWSER_INDEXING.md](BROWSER_INDEXING.md) for browser indexing details.
@@ -171,9 +175,6 @@ python3 local-agent/cli.py ask "What documents mention machine learning?"
 
 # System-wide root scanning (PLANNED)
 python3 local-agent/cli.py bfs-index / --root-scan
-
-# Daemon mode for auto-indexing (PLANNED)
-python3 local-agent/cli.py daemon --startup-index --idle-updates
 ```
 
 ### Advanced Options
@@ -279,11 +280,15 @@ tests/
 ### Performance Optimizations
 
 - **BFS Streaming**: Level-by-level processing with checkpointing
+- **Parallel Extraction**: `extraction_workers: 4` for concurrent PDF/DOCX/OCR extraction
 - **MPS Acceleration**: Uses Apple Silicon GPU for 2-3x faster embeddings
-- **Batch Processing**: 1024 embedding batch, 4000 upsert batch
+- **Batch Processing**: 2048 embed batch, 8000 upsert batch, `embed_accumulate_batch` for cross-file batching
+- **SQLite WAL**: Write-ahead logging for faster concurrent reads during search
+- **Parallel Search**: Vector (Qdrant) and lexical (FTS5) run concurrently when `parallel_search: true`
+- **RRF Merge**: Optional Reciprocal Rank Fusion (`merge_strategy: rrf`) for more accurate ranking
+- **Normalized Embeddings**: `normalize_embeddings: true` improves cosine similarity
 - **Smart Exclusions**: Skips system files, caches, and build artifacts
 - **Vector Optimization**: HNSW index with tuned parameters (m=32, ef_construct=256)
-- **Hybrid Scoring**: BM25 + cosine similarity + exact match boosts + position bonuses
 
 ## 🔧 Configuration
 
@@ -321,11 +326,14 @@ index:
   ocr_backend: tesseract   # tesseract | paddleocr | easyocr (AI backends faster on GPU)
   max_pdf_pages: 50
   extraction_timeout: 10
+  extraction_workers: 4    # Parallel extraction (0=disabled)
 
 search:
   top_k: 50
   lex_k: 100
   vec_k: 150
+  parallel_search: true   # Run vector + lexical in parallel
+  merge_strategy: weighted  # or rrf for Reciprocal Rank Fusion
   merge_k: 200
   timeout_sec: 2.5
   cache_size: 256  # Search result cache
@@ -533,20 +541,27 @@ python3 local-agent/cli.py bfs-index ~/Documents
 
 ### Performance Tuning
 
-```bash
-# For large datasets (>100k files)
-# Adjust in config.yaml:
+```yaml
+# Faster indexing (config.yaml)
 index:
+  extraction_workers: 4   # Parallel PDF/DOCX extraction
   embed_batch: 2048
   upsert_batch: 8000
+  embed_accumulate_batch: 2048
   max_pdf_pages: 100
 
-# For memory-constrained systems
-index:
-  embed_batch: 512
-  upsert_batch: 2000
-  max_pdf_pages: 25
+# Faster & more accurate search
+search:
+  parallel_search: true   # Vector + lexical in parallel
+  merge_strategy: rrf    # RRF often more accurate than weighted
+  cache_size: 512       # Larger cache for repeated queries
+
+embedding:
+  normalize_embeddings: true
+  use_onnx: true        # 2-3x faster (pip install sentence-transformers[onnx])
 ```
+
+For memory-constrained systems: reduce `embed_batch` to 512, `upsert_batch` to 2000, `extraction_workers` to 0.
 
 ## 🤝 Contributing
 

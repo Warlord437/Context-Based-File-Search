@@ -8,6 +8,7 @@ import time
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Set, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 
 from .config import get_config
@@ -39,7 +40,8 @@ class BFSIndexer:
         self._text_exts = {".txt", ".md", ".markdown", ".pdf", ".docx", ".html", ".htm", ".rtf"}
         self.max_pdf_pages = self.config["index"]["max_pdf_pages"]
         self.extraction_timeout = self.config["index"]["extraction_timeout"]
-        
+        self.extraction_workers = self.config["index"].get("extraction_workers", 0)
+
         # Stats tracking
         self.stats = IndexStats()
         self._closed = False
@@ -105,15 +107,31 @@ class BFSIndexer:
         
         # Prioritize text files (fast) over images (slow OCR) for better perceived indexing speed
         current_level = self._sort_for_processing(current_level)
-        
-        # Process current level
-        for item_path in current_level:
+
+        # Split files vs dirs for optional parallel extraction
+        files_level = [p for p in current_level if Path(p).exists() and Path(p).is_file()]
+        dirs_level = [p for p in current_level if Path(p).exists() and Path(p).is_dir()]
+
+        # Process dirs first (unchanged)
+        for item_path in dirs_level:
             try:
                 self._process_item(item_path, frontier)
             except Exception as e:
                 logger.error(f"Error processing {item_path}: {e}")
                 frontier.errors.append(f"{item_path}: {str(e)}")
                 self.stats.errors += 1
+
+        # Process files (with parallel extraction when extraction_workers > 0)
+        if self.extraction_workers and len(files_level) > 1:
+            self._process_files_parallel(files_level, frontier)
+        else:
+            for item_path in files_level:
+                try:
+                    self._process_item(item_path, frontier)
+                except Exception as e:
+                    logger.error(f"Error processing {item_path}: {e}")
+                    frontier.errors.append(f"{item_path}: {str(e)}")
+                    self.stats.errors += 1
         
         # Flush any remaining chunks in embed buffer
         self._flush_embed_buffer()
@@ -147,6 +165,83 @@ class BFSIndexer:
         
         # Mark as seen
         frontier.seen[item_path] = device_inode
+
+    def _process_files_parallel(self, file_paths: List[str], frontier: FrontierState):
+        """Process multiple files with parallel text extraction."""
+        workers = min(self.extraction_workers, len(file_paths), 8)
+        to_extract = []
+
+        for file_path in file_paths:
+            path = Path(file_path)
+            if path.suffix.lower() not in self.allow_exts:
+                self.stats.files_skipped += 1
+                frontier.seen[file_path] = (path.stat().st_dev, path.stat().st_ino)
+                continue
+            if path.suffix.lower() in self._image_exts and self.ocr_enabled and not self._image_in_ocr_paths(file_path):
+                self.stats.files_skipped += 1
+                frontier.seen[file_path] = (path.stat().st_dev, path.stat().st_ino)
+                continue
+            if self._should_exclude(file_path):
+                self.stats.files_skipped += 1
+                frontier.seen[file_path] = (path.stat().st_dev, path.stat().st_ino)
+                continue
+            stats = get_file_stats(file_path)
+            if not stats:
+                frontier.seen[file_path] = (path.stat().st_dev, path.stat().st_ino)
+                continue
+            fid = file_id(file_path, stats["mtime"], stats["size"])
+            existing_sha256 = self._get_existing_sha256(fid)
+            if existing_sha256:
+                to_extract.append((file_path, stats, fid, existing_sha256))
+            else:
+                to_extract.append((file_path, stats, fid, None))
+
+        def _extract_one(args):
+            fp, st, fid, existing = args
+            text = self._extract_text(fp)
+            if text is None:
+                return (fp, None, st, fid, existing)
+            new_sha = hashlib.sha256(text.encode()).hexdigest()
+            if existing and new_sha == existing:
+                return (fp, None, st, fid, existing)
+            return (fp, text, st, fid, existing)
+
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futures = {ex.submit(_extract_one, item): item for item in to_extract}
+            for future in as_completed(futures):
+                fp = futures[future][0]
+                try:
+                    file_path, text, stats, fid, _ = future.result()
+                    path = Path(file_path)
+                    frontier.seen[file_path] = (path.stat().st_dev, path.stat().st_ino)
+                    if text is None:
+                        self.stats.files_skipped += 1
+                        continue
+                    self._process_file_with_text(file_path, text, stats, fid, frontier)
+                except Exception as e:
+                    logger.error(f"Parallel extraction failed for {fp}: {e}")
+                    self.stats.errors += 1
+
+    def _process_file_with_text(self, file_path: str, text: str, stats: dict, fid: str, frontier: FrontierState):
+        """Process file using pre-extracted text (chunk, catalog, embed)."""
+        new_sha256 = hashlib.sha256(text.encode()).hexdigest()
+        chunks = self._chunk_text(text, file_path, fid)
+        try:
+            with self.catalog.transaction():
+                self.catalog.upsert_file(str(file_path), stats["size"], stats["mtime"], new_sha256, in_transaction=True)
+                self.catalog.insert_chunks(fid, chunks, in_transaction=True)
+                for chunk in chunks:
+                    self.catalog.fts_insert(chunk.chunk_id, chunk.text, chunk.path, in_transaction=True)
+        except Exception as e:
+            logger.error(f"Database operations failed for {file_path}: {e}")
+            raise
+        self._embed_buffer.extend(chunks)
+        if len(self._embed_buffer) >= self._embed_accumulate_batch:
+            self._flush_embed_buffer()
+        self.stats.chunks_created += len(chunks)
+        self.stats.files_processed += 1
+        frontier.processed_files += 1
+        logger.info(f"Processed file: {file_path} ({len(chunks)} chunks)")
     
     def _sort_for_processing(self, items: List[str]) -> List[str]:
         """Prioritize text files (fast) over images (slow OCR) for better indexing throughput."""
@@ -607,9 +702,15 @@ class BFSIndexer:
             batch_size = self.config["index"].get("embed_batch", 2048)
             embeddings = []
             
+            normalize = self.config.get("embedding", {}).get("normalize_embeddings", True)
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i:i + batch_size]
-                batch_embeddings = model.encode(batch_texts, convert_to_tensor=False)
+                batch_embeddings = model.encode(
+                    batch_texts,
+                    convert_to_tensor=False,
+                    show_progress_bar=False,
+                    normalize_embeddings=normalize,
+                )
                 embeddings.extend(batch_embeddings.tolist())
             
             # Prepare points for Qdrant (payload includes text for dashboard visualization)

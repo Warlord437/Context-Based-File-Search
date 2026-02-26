@@ -202,9 +202,18 @@ class Catalog:
     
     def _init_db(self):
         """Initialize database connection and ensure schema exists."""
-        self.conn = sqlite3.connect(str(self.db_path))
+        self.conn = sqlite3.connect(str(self.db_path), timeout=30)
         self.conn.row_factory = sqlite3.Row  # Enable dict-like access
-        
+
+        # Performance: WAL mode and tuning for faster reads/writes
+        try:
+            self.conn.execute("PRAGMA journal_mode = WAL")
+            self.conn.execute("PRAGMA synchronous = NORMAL")
+            self.conn.execute("PRAGMA cache_size = -64000")  # 64MB cache
+            self.conn.execute("PRAGMA temp_store = MEMORY")
+        except Exception as e:
+            logger.debug("SQLite pragmas (non-fatal): %s", e)
+
         # Enable foreign key constraints
         self.conn.execute("PRAGMA foreign_keys = ON")
         

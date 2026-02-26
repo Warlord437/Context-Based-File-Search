@@ -48,6 +48,11 @@ index:
     - "**/.Trash/**"
     - "**/.*/**"
 
+# Daemon mode (python3 local-agent/cli.py daemon --startup-index --idle-updates)
+daemon:
+  idle_interval_minutes: 30  # Minutes between full re-index cycles
+  max_items_per_slice: 1000 # Items per BFS slice during indexing
+
 search:
   top_k: 50
   lex_k: 100
@@ -57,8 +62,11 @@ search:
   cache_size: 256  # Search result cache (higher = better for repeated queries)
   # Hard limit: abort search if exceeds (seconds). 20 = max for heavy queries.
   max_search_sec: 20
-  # Run vector and lexical search in parallel
+  # Run vector and lexical search in parallel (faster)
   parallel_search: true
+  # Merge strategy: weighted (default) or rrf (Reciprocal Rank Fusion, often more accurate)
+  merge_strategy: weighted
+  rrf_k: 60  # RRF constant when merge_strategy=rrf
   # Query expansion adds latency; disable for faster search
   expand_query: false
   bm25_weight: 0.55
@@ -90,6 +98,8 @@ paths:
 embedding:
   model: "sentence-transformers/all-MiniLM-L6-v2"
   dim: 384
+  # Normalize embeddings for better cosine similarity (recommended)
+  normalize_embeddings: true
   # Use ONNX backend for 2-3x faster inference (pip install sentence-transformers[onnx])
   use_onnx: false
 

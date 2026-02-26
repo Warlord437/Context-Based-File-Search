@@ -5,6 +5,7 @@ Hybrid retriever: vector + BM25 + merge & score.
 import time
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 
@@ -116,15 +117,17 @@ class HybridRetriever:
     def embed_query(self, text: str) -> Optional[np.ndarray]:
         """Embed query text using SentenceTransformer (with cached model)."""
         try:
-            # Use cached model loader (loads once, reuses after)
             model = get_embedding_model()
             if model is None:
                 return None
-            
-            # Generate embedding
-            embedding = model.encode([text], convert_to_tensor=False)
+            normalize = self.config.get("embedding", {}).get("normalize_embeddings", True)
+            embedding = model.encode(
+                [text],
+                convert_to_tensor=False,
+                show_progress_bar=False,
+                normalize_embeddings=normalize,
+            )
             return embedding[0]
-            
         except Exception as e:
             logger.error(f"Query embedding failed: {e}")
             return None
@@ -184,28 +187,33 @@ class HybridRetriever:
     
     def merge_and_score(self, query: str, vec_candidates: CandidateDict, lex_candidates: CandidateDict, 
                        weights: Dict[str, float] = None, boosts: Dict[str, float] = None) -> List[ScoredChunk]:
-        """Merge and score candidates from both search methods."""
-        
-        # Default weights and boosts
+        """Merge and score candidates from both search methods (weighted or RRF)."""
+        merge_strategy = self.search_config.get("merge_strategy", "weighted")
+        rrf_k = self.search_config.get("rrf_k", 60)
+
         weights = weights or {
             "bm25_weight": self.search_config["bm25_weight"],
             "cosine_weight": self.search_config["cosine_weight"]
         }
-        
         boosts = boosts or {
             "exact_boost": self.search_config["exact_boost"],
             "early_pos_boost": self.search_config["early_pos_boost"]
         }
-        
-        # Get all unique chunk IDs
+
         all_chunk_ids = list(set(vec_candidates.keys()) | set(lex_candidates.keys()))
-        
         if not all_chunk_ids:
             return []
-        
-        # Normalize scores to [0, 1] range
-        vec_scores_norm = self._normalize_scores(vec_candidates)
-        lex_scores_norm = self._normalize_scores(lex_candidates)
+
+        if merge_strategy == "rrf":
+            vec_rank = {cid: r for r, cid in enumerate(sorted(vec_candidates, key=vec_candidates.get, reverse=True), 1)}
+            lex_rank = {cid: r for r, cid in enumerate(sorted(lex_candidates, key=lex_candidates.get, reverse=True), 1)}
+            vec_scores_norm = {cid: 1.0 / (rrf_k + vec_rank.get(cid, 9999)) for cid in all_chunk_ids}
+            lex_scores_norm = {cid: 1.0 / (rrf_k + lex_rank.get(cid, 9999)) for cid in all_chunk_ids}
+            rrf_scale = 2.0
+        else:
+            vec_scores_norm = self._normalize_scores(vec_candidates)
+            lex_scores_norm = self._normalize_scores(lex_candidates)
+            rrf_scale = 1.0
         
         # Batch fetch all chunk metadata and text (1-2 queries vs N)
         batch_data = self.catalog.chunks_meta_and_text_batch(all_chunk_ids)
@@ -231,12 +239,14 @@ class HybridRetriever:
             # Calculate position bonus
             position_bonus = self._calculate_position_bonus(query, chunk_text)
             
-            # Calculate final score
-            base_score = (weights["bm25_weight"] * bm25_score + 
-                         weights["cosine_weight"] * cosine_score)
-            
-            final_score = (base_score + 
-                          boosts["exact_boost"] * exact_match + 
+            if merge_strategy == "rrf":
+                base_score = (vec_scores_norm.get(chunk_id, 0) + lex_scores_norm.get(chunk_id, 0)) / rrf_scale
+            else:
+                base_score = (weights["bm25_weight"] * bm25_score +
+                             weights["cosine_weight"] * cosine_score)
+
+            final_score = (base_score +
+                          boosts["exact_boost"] * exact_match +
                           boosts["early_pos_boost"] * position_bonus)
             
             # Create score breakdown
@@ -337,12 +347,18 @@ class HybridRetriever:
             logger.warning("Search aborted: exceeded time limit after embedding")
             return []
 
-        # Get candidates. Note: parallel_search disabled - SQLite catalog is not thread-safe.
-        # Batch chunk fetch and reduced k already provide significant speedup.
-        vec_candidates = self.vector_candidates(query_embedding, timeout=timeout)
-        lex_candidates = self.lexical_candidates(query)
+        # Get candidates: run vector in thread (Qdrant), lexical in main (SQLite not thread-safe)
+        parallel = self.search_config.get("parallel_search", False)
+        if parallel:
+            with ThreadPoolExecutor(max_workers=1) as ex:
+                vec_future = ex.submit(self.vector_candidates, query_embedding, None, timeout)
+                lex_candidates = self.lexical_candidates(query)
+                vec_candidates = vec_future.result()
+        else:
+            vec_candidates = self.vector_candidates(query_embedding, timeout=timeout)
+            lex_candidates = self.lexical_candidates(query)
 
-        # Merge and score
+        # Merge and score (RRF or weighted)
         scored_chunks = self.merge_and_score(query, vec_candidates, lex_candidates)
 
         # Apply filters

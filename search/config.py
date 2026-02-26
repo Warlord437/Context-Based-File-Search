@@ -24,6 +24,7 @@ DEFAULT = {
         "ocr_backend": "tesseract",  # tesseract | paddleocr | easyocr
         "max_pdf_pages": 50,
         "extraction_timeout": 10,
+        "extraction_workers": 0,
         "exclude_patterns": [
             "**/node_modules/**",
             "**/.git/**", 
@@ -39,7 +40,12 @@ DEFAULT = {
             "**/.cache/**",
             "**/.Trash/**",
             "**/.*/**"
-        ]
+        ],
+        "paths": ["~/Documents"],
+    },
+    "daemon": {
+        "idle_interval_minutes": 30,
+        "max_items_per_slice": 1000,
     },
     "search": {
         "top_k": 50,
@@ -49,6 +55,8 @@ DEFAULT = {
         "timeout_sec": 2.5,
         "max_search_sec": 20.0,
         "parallel_search": True,
+        "merge_strategy": "weighted",
+        "rrf_k": 60,
         "bm25_weight": 0.55,
         "cosine_weight": 0.45,
         "exact_boost": 0.20,
@@ -63,6 +71,7 @@ DEFAULT = {
     "embedding": {
         "model": "sentence-transformers/all-MiniLM-L6-v2",
         "dim": 384,
+        "normalize_embeddings": True,
     },
     "qdrant": {
         "url": "http://localhost:6333",
