@@ -77,9 +77,15 @@ Explore your indexed content as an interactive 3D force-directed graph. Blue nod
 
 See **[INSTALL.md](INSTALL.md)** for full installation instructions.
 
-**Quick start:**
+**Quick start (one-liner, like OpenClaw):**
 ```bash
-git clone https://github.com/yourusername/local-agent.git && cd local-agent && ./install.sh
+curl -fsSL https://raw.githubusercontent.com/Warlord437/Context-Based-File-Search/main/install.sh | bash
+```
+Then run `local-agent status` (add `~/.local/bin` to PATH if needed).
+
+**Or clone and install:**
+```bash
+git clone https://github.com/Warlord437/Context-Based-File-Search.git && cd Context-Based-File-Search && ./install.sh
 source .venv/bin/activate
 python3 local-agent/cli.py status
 ```
@@ -566,6 +572,16 @@ For memory-constrained systems: reduce `embed_batch` to 512, `upsert_batch` to 2
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Local data (not in Git)
+
+The `store/` directory (catalog.db, frontier.json, cache) and all `*.db` files are in `.gitignore` and are never pushed to GitHub. Each clone creates its own local index. If you accidentally committed them, run:
+
+```bash
+./scripts/clean-git-for-push.sh
+```
+
+See [DEPLOY.md](DEPLOY.md) for pushing via VS Code or GitHub Desktop when Cursor can't connect to GitHub.
 
 ### Development Setup
 

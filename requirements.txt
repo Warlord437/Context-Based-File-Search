@@ -10,9 +10,10 @@ uvicorn[standard]>=0.24.0
 strawberry-graphql[fastapi]>=0.200.0
 
 # Optional dependencies for extended file support
-# OCR: pytesseract (default) + Pillow. For AI OCR (faster on GPU):
-#   pip install paddlepaddle paddleocr   # PaddleOCR (~12 fps on GPU)
-#   pip install easyocr                 # EasyOCR (~4 fps on GPU)
+# OCR: pytesseract (default) + Pillow. For AI OCR (faster on GPU), uncomment one:
+#   paddlepaddle>=2.5.0
+#   paddleocr>=2.7.0
+#   # easyocr>=1.7.0
 PyPDF2>=3.0.0
 python-docx>=0.8.11
 Pillow>=9.0.0

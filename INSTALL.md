@@ -5,19 +5,27 @@ This guide provides step-by-step instructions for installing and setting up Loca
 ## Quick Install (One Line)
 
 ```bash
-git clone https://github.com/yourusername/local-agent.git && cd local-agent && ./install.sh
+curl -fsSL https://raw.githubusercontent.com/Warlord437/Context-Based-File-Search/main/install.sh | bash
 ```
 
-Then activate the venv and run:
+This clones to `~/.local-agent`, installs deps, and adds a `local-agent` command to `~/.local/bin`. Ensure `~/.local/bin` is in your PATH (add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc` or `~/.zshrc`).
+
+Then run:
 
 ```bash
-source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-python3 local-agent/cli.py status
-python3 local-agent/cli.py bfs-index ~/Documents
-python3 local-agent/cli.py find "your query"
+local-agent status
+local-agent bfs-index ~/Documents
+local-agent find "your query"
 ```
 
-The `install.sh` script creates a virtual environment, installs dependencies, and starts Qdrant (if Docker is available).
+**Alternative (clone first):**
+```bash
+git clone https://github.com/Warlord437/Context-Based-File-Search.git && cd Context-Based-File-Search && ./install.sh
+source .venv/bin/activate
+python3 local-agent/cli.py status
+```
+
+The install script creates a virtual environment, installs dependencies, and starts Qdrant (if Docker is available).
 
 ---
 
